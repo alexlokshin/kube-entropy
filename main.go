@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -9,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	yaml "gopkg.in/yaml.v2"
@@ -31,7 +31,7 @@ type entropyConfig struct {
 var ec entropyConfig
 
 func combine(parts []string, separator string) (result string) {
-	var buffer bytes.Buffer
+	var buffer strings.Builder
 	for _, element := range parts {
 		if buffer.Len() > 0 {
 			buffer.WriteString(separator)
