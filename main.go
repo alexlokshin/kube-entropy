@@ -116,8 +116,8 @@ func killPods(clientset *kubernetes.Clientset) {
 		} else {
 			randomIndex := rand.Intn(len(pods.Items))
 			for i := 0; i < len(pods.Items); i++ {
-				log.Printf("Force deleting pod %s.%s\n", pods.Items[i].Namespace, pods.Items[i].Name)
 				if i == randomIndex {
+					log.Printf("Force deleting pod %s.%s\n", pods.Items[i].Namespace, pods.Items[i].Name)
 					err := clientset.CoreV1().Pods(pods.Items[i].Namespace).Delete(pods.Items[i].Name, metav1.NewDeleteOptions(0))
 					if err != nil {
 						log.Printf("Cannot delete a pod %s.%s\n", pods.Items[i].Namespace, pods.Items[i].Name)
