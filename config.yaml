@@ -1,0 +1,12 @@
+---
+nodeSelectors:
+  fields:
+    - spec.unschedulable!=true
+  labels:
+podSelectors:
+  fields:
+    - metadata.namespace=default
+    - metadata.namespace!=kube-system
+    - metadata.namespace!=docker
+  labels:
+    - app=kube-secret-rotator

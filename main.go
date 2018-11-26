@@ -1,19 +1,53 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"time"
 
+	yaml "gopkg.in/yaml.v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
+
+type entropySelectors struct {
+	Fields []string `yaml:"fields"`
+	Labels []string `yaml:"labels"`
+}
+
+type entropyConfig struct {
+	NodeSelectors entropySelectors `yaml:"nodeSelectors"`
+	PodSelectors  entropySelectors `yaml:"podSelectors"`
+}
+
+var ec entropyConfig
+
+func combine(parts []string, separator string) (result string) {
+	var buffer bytes.Buffer
+	for _, element := range parts {
+		if buffer.Len() > 0 {
+			buffer.WriteString(separator)
+		}
+		buffer.WriteString(element)
+	}
+	result = buffer.String()
+	return
+}
+
+func listSelectors(selectors entropySelectors) (listOptions metav1.ListOptions) {
+	listOptions = metav1.ListOptions{}
+	listOptions.FieldSelector = combine(selectors.Fields, ",")
+	listOptions.LabelSelector = combine(selectors.Labels, ",")
+	return
+}
 
 func betterPanic(message string) {
 	fmt.Printf("%s\n\n", message)
@@ -28,9 +62,9 @@ func homeDir() string {
 }
 
 func killNodes(clientset *kubernetes.Clientset) {
-	//var cordonedNode *v1.Node
+	nodeListOptions := listSelectors(ec.NodeSelectors)
 	for true {
-		nodes, err := clientset.CoreV1().Nodes().List(metav1.ListOptions{})
+		nodes, err := clientset.CoreV1().Nodes().List(nodeListOptions)
 		if err != nil {
 			log.Println("Cannot get a list of nodes. Skipping for now: %v", err)
 		} else {
@@ -38,7 +72,6 @@ func killNodes(clientset *kubernetes.Clientset) {
 			// Make all node schedulable
 			for i := 0; i < len(nodes.Items); i++ {
 				node := nodes.Items[i]
-				log.Printf("%s\n", node.Name)
 				if node.Spec.Unschedulable == true {
 					node.Spec.Unschedulable = false
 					_, err = clientset.CoreV1().Nodes().Update(&node)
@@ -54,7 +87,7 @@ func killNodes(clientset *kubernetes.Clientset) {
 			log.Printf("%d nodes found\n", len(nodes.Items))
 			for i := 0; i < len(nodes.Items); i++ {
 				node := nodes.Items[i]
-				log.Printf("%s\n", node.Name)
+				log.Printf("Cordoning off %s\n", node.Name)
 				if i == randomIndex {
 					node.Spec.Unschedulable = true
 					_, err = clientset.CoreV1().Nodes().Update(&node)
@@ -70,8 +103,9 @@ func killNodes(clientset *kubernetes.Clientset) {
 }
 
 func killPods(clientset *kubernetes.Clientset) {
-	for i := 0; i < 1000; i++ {
-		pods, err := clientset.CoreV1().Pods("").List(metav1.ListOptions{FieldSelector: "metadata.namespace!=kube-system,metadata.namespace!=docker"})
+	podListOptions := listSelectors(ec.PodSelectors)
+	for true {
+		pods, err := clientset.CoreV1().Pods("").List(podListOptions)
 		if err != nil {
 			log.Println("Cannot get a list of running pods. Skipping for now.")
 		} else {
@@ -79,7 +113,10 @@ func killPods(clientset *kubernetes.Clientset) {
 			for i := 0; i < len(pods.Items); i++ {
 				log.Printf("Force deleting pod %s.%s\n", pods.Items[i].Namespace, pods.Items[i].Name)
 				if i == randomIndex {
-					//clientset.CoreV1().Pods(pods.Items[i].Namespace).Delete(pods.Items[i].Name, metav1.NewDeleteOptions(0))
+					err := clientset.CoreV1().Pods(pods.Items[i].Namespace).Delete(pods.Items[i].Name, metav1.NewDeleteOptions(0))
+					if err != nil {
+						log.Printf("Cannot delete a pod %s.%s\n")
+					}
 				}
 			}
 		}
@@ -104,6 +141,16 @@ func main() {
 		if err != nil {
 			betterPanic(err.Error())
 		}
+	}
+
+	yamlFile, err := ioutil.ReadFile("config.yaml")
+	if err != nil {
+		log.Printf("yamlFile.Get err   #%v ", err)
+	}
+
+	err = yaml.Unmarshal(yamlFile, &ec)
+	if err != nil {
+		betterPanic(err.Error())
 	}
 
 	log.Printf("Starting kube-entropy.\n")
