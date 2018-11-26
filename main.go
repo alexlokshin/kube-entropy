@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +17,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+
+	"net"
 )
 
 type entropySelectors struct {
@@ -26,9 +29,11 @@ type entropySelectors struct {
 type entropyConfig struct {
 	NodeSelectors entropySelectors `yaml:"nodeSelectors"`
 	PodSelectors  entropySelectors `yaml:"podSelectors"`
+	Node          string           `yaml:"node"`
 }
 
 var ec entropyConfig
+var inCluster bool
 
 func combine(parts []string, separator string) (result string) {
 	var buffer strings.Builder
@@ -62,9 +67,9 @@ func homeDir() string {
 }
 
 func killNodes(clientset *kubernetes.Clientset) {
-	nodeListOptions := listSelectors(ec.NodeSelectors)
+	listOptions := listSelectors(ec.NodeSelectors)
 	for true {
-		nodes, err := clientset.CoreV1().Nodes().List(nodeListOptions)
+		nodes, err := clientset.CoreV1().Nodes().List(listOptions)
 		if err != nil {
 			log.Printf("Cannot get a list of nodes. Skipping for now: %v\n", err)
 		} else {
@@ -103,9 +108,9 @@ func killNodes(clientset *kubernetes.Clientset) {
 }
 
 func killPods(clientset *kubernetes.Clientset) {
-	podListOptions := listSelectors(ec.PodSelectors)
+	listOptions := listSelectors(ec.PodSelectors)
 	for true {
-		pods, err := clientset.CoreV1().Pods("").List(podListOptions)
+		pods, err := clientset.CoreV1().Pods("").List(listOptions)
 		if err != nil {
 			log.Println("Cannot get a list of running pods. Skipping for now.")
 		} else {
@@ -121,6 +126,41 @@ func killPods(clientset *kubernetes.Clientset) {
 			}
 		}
 		time.Sleep(30 * time.Second)
+	}
+}
+
+func monitor(clientset *kubernetes.Clientset) {
+	listOptions := listSelectors(ec.PodSelectors)
+	for true {
+		services, err := clientset.CoreV1().Services("").List(listOptions)
+		if err != nil {
+			log.Println("Cannot get a list of services. Skipping for now.")
+		}
+		for i := 0; i < len(services.Items); i++ {
+			service := services.Items[i]
+			for _, element := range service.Spec.Ports {
+				uri := service.Name + "." + service.Namespace + ".svc:" + element.TargetPort.String()
+				if !inCluster {
+					if element.NodePort > 0 {
+						uri = ec.Node + ":" + strconv.Itoa(int(element.NodePort))
+					} else {
+						uri = ""
+					}
+				}
+
+				if len(uri) > 0 {
+					go func() {
+						log.Printf("Connecting to %s\n", uri)
+						conn, err := net.Dial(strings.ToLower(string(element.Protocol)), uri)
+						if err != nil {
+							log.Printf("could not connect to service %s: %v\n", uri, err)
+						}
+						defer conn.Close()
+					}()
+				}
+			}
+		}
+		time.Sleep(2 * time.Second)
 	}
 }
 
@@ -141,7 +181,9 @@ func main() {
 		if err != nil {
 			betterPanic(err.Error())
 		}
+		inCluster = true
 	}
+	inCluster = false
 
 	yamlFile, err := ioutil.ReadFile("config.yaml")
 	if err != nil {
@@ -163,6 +205,7 @@ func main() {
 		log.Printf("Entropying it up.\n")
 		go killPods(clientset)
 		go killNodes(clientset)
+		go monitor(clientset)
 		for true {
 			time.Sleep(30 * time.Second)
 		}

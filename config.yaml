@@ -9,4 +9,8 @@ podSelectors:
     - metadata.namespace!=kube-system
     - metadata.namespace!=docker
   labels:
-    - app=kube-secret-rotator
+    - app=my-nginx
+serviceHealthCheck:
+  minPods: 2
+node: localhost
+  
