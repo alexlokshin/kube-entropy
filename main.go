@@ -66,7 +66,7 @@ func killNodes(clientset *kubernetes.Clientset) {
 	for true {
 		nodes, err := clientset.CoreV1().Nodes().List(nodeListOptions)
 		if err != nil {
-			log.Println("Cannot get a list of nodes. Skipping for now: %v", err)
+			log.Printf("Cannot get a list of nodes. Skipping for now: %v\n", err)
 		} else {
 			log.Printf("%d nodes found\n", len(nodes.Items))
 			// Make all node schedulable
@@ -76,7 +76,7 @@ func killNodes(clientset *kubernetes.Clientset) {
 					node.Spec.Unschedulable = false
 					_, err = clientset.CoreV1().Nodes().Update(&node)
 					if err != nil {
-						log.Println("Cannot uncordon the node: %v", err)
+						log.Printf("Cannot uncordon the node: %v\n", err)
 					}
 				}
 			}
@@ -92,7 +92,7 @@ func killNodes(clientset *kubernetes.Clientset) {
 					node.Spec.Unschedulable = true
 					_, err = clientset.CoreV1().Nodes().Update(&node)
 					if err != nil {
-						log.Println("Cannot cordon the node: %v", err)
+						log.Printf("Cannot cordon the node: %v\n", err)
 					}
 				}
 			}
@@ -115,7 +115,7 @@ func killPods(clientset *kubernetes.Clientset) {
 				if i == randomIndex {
 					err := clientset.CoreV1().Pods(pods.Items[i].Namespace).Delete(pods.Items[i].Name, metav1.NewDeleteOptions(0))
 					if err != nil {
-						log.Printf("Cannot delete a pod %s.%s\n")
+						log.Printf("Cannot delete a pod %s.%s\n", pods.Items[i].Namespace, pods.Items[i].Name)
 					}
 				}
 			}
