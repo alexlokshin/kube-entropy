@@ -85,19 +85,23 @@ func killNodes(clientset *kubernetes.Clientset) {
 					}
 				}
 			}
-			time.Sleep(1 * time.Minute)
 
 			// And randomly unschedule one
-			randomIndex := rand.Intn(nodes.Size())
+			randomIndex := rand.Intn(len(nodes.Items))
 			log.Printf("%d nodes found\n", len(nodes.Items))
-			for i := 0; i < len(nodes.Items); i++ {
-				node := nodes.Items[i]
-				log.Printf("Cordoning off %s\n", node.Name)
-				if i == randomIndex {
-					node.Spec.Unschedulable = true
-					_, err = clientset.CoreV1().Nodes().Update(&node)
-					if err != nil {
-						log.Printf("Cannot cordon the node: %v\n", err)
+			if len(nodes.Items) == 1 {
+				log.Println("Only 1 node found, cannot cordon it off.")
+			} else {
+				for i := 0; i < len(nodes.Items); i++ {
+					node := nodes.Items[i]
+					if i == randomIndex {
+						log.Printf("Cordoning off %s\n", node.Name)
+						knode, err := clientset.CoreV1().Nodes().Get(node.Name, metav1.GetOptions{})
+						knode.Spec.Unschedulable = true
+						_, err = clientset.CoreV1().Nodes().Update(knode)
+						if err != nil {
+							log.Printf("Cannot cordon the node: %v\n", err)
+						}
 					}
 				}
 			}
