@@ -13,6 +13,7 @@ import (
 	"time"
 
 	yaml "gopkg.in/yaml.v2"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -74,7 +75,7 @@ func killNodes(clientset *kubernetes.Clientset) {
 			log.Printf("Cannot get a list of nodes. Skipping for now: %v\n", err)
 		} else {
 			log.Printf("%d nodes found\n", len(nodes.Items))
-			// Make all node schedulable
+			// Make all nodes schedulable
 			for i := 0; i < len(nodes.Items); i++ {
 				node := nodes.Items[i]
 				if node.Spec.Unschedulable == true {
@@ -101,12 +102,13 @@ func killNodes(clientset *kubernetes.Clientset) {
 						if err != nil {
 							log.Printf("Cannot cordon the node: %v\n", err)
 						}
+						// TODO: Drain the node
 					}
 				}
 			}
 		}
 
-		time.Sleep(5 * time.Minute)
+		time.Sleep(time.Duration(rand.Intn(5)) * time.Minute)
 	}
 }
 
@@ -128,7 +130,7 @@ func killPods(clientset *kubernetes.Clientset) {
 				}
 			}
 		}
-		time.Sleep(30 * time.Second)
+		time.Sleep(time.Duration(rand.Intn(30)) * time.Second)
 	}
 }
 
@@ -141,13 +143,21 @@ func monitor(clientset *kubernetes.Clientset) {
 		}
 		for i := 0; i < len(services.Items); i++ {
 			service := services.Items[i]
+			if service.Spec.Type == v1.ServiceTypeExternalName {
+				// This is just a proxy, it has no pods, nothing to test
+				continue
+			}
+
 			for _, element := range service.Spec.Ports {
 				uri := service.Name + "." + service.Namespace + ".svc:" + element.TargetPort.String()
 				if !inCluster {
-					if element.NodePort > 0 {
-						uri = ec.Node + ":" + strconv.Itoa(int(element.NodePort))
-					} else {
-						uri = ""
+					// When testing out of cluster, only NodePort and ingress routes can be tested, LoadBalancer and ingresses are not supported yet
+					if service.Spec.Type == v1.ServiceTypeNodePort {
+						if element.NodePort > 0 {
+							uri = ec.Node + ":" + strconv.Itoa(int(element.NodePort))
+						} else {
+							uri = ""
+						}
 					}
 				}
 
@@ -190,7 +200,7 @@ func main() {
 
 	yamlFile, err := ioutil.ReadFile("config.yaml")
 	if err != nil {
-		log.Printf("yamlFile.Get err   #%v ", err)
+		log.Printf("yamlFile.Get err #%v ", err)
 	}
 
 	err = yaml.Unmarshal(yamlFile, &ec)
