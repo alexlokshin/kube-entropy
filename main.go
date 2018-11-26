@@ -96,9 +96,8 @@ func killNodes(clientset *kubernetes.Clientset) {
 					node := nodes.Items[i]
 					if i == randomIndex {
 						log.Printf("Cordoning off %s\n", node.Name)
-						knode, err := clientset.CoreV1().Nodes().Get(node.Name, metav1.GetOptions{})
-						knode.Spec.Unschedulable = true
-						_, err = clientset.CoreV1().Nodes().Update(knode)
+						node.Spec.Unschedulable = true
+						_, err = clientset.CoreV1().Nodes().Update(&node)
 						if err != nil {
 							log.Printf("Cannot cordon the node: %v\n", err)
 						}
