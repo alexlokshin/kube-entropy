@@ -9,17 +9,22 @@ env:
 go:
   - 1.11.x
 
-before_script:
-  - go get
+before_install:
+  - curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
+
+install:
+  - $GOPATH/bin/dep ensure
 
 script:
   - env GOOS=linux GOARCH=arm go build
-  - docker build . -t kube-entropy:$TRAVIS_BRANCH_$TRAVIS_BUILD_NUMBER_$TRAVIS_COMMIT
+  - export COMMIT_TAG="${TRAVIS_BRANCH}_${TRAVIS_BUILD_NUMBER}_${TRAVIS_COMMIT}"
+  - docker build . -t kube-entropy:"${COMMIT_TAG}"
 
 after_success:
   - |
     echo ${DOCKER_PASSWORD} | docker login --username "alexlokshin" --password-stdin
-    export COMMIT_TAG="$TRAVIS_BRANCH"_"$TRAVIS_COMMIT"
+    export COMMIT_TAG="${TRAVIS_BRANCH}_${TRAVIS_BUILD_NUMBER}_${TRAVIS_COMMIT}"
+    echo ${COMMIT_TAG}
     docker tag kube-entropy:$COMMIT_TAG alexlokshin/kube-entropy:${COMMIT_TAG}
     if [ "$TRAVIS_BRANCH" == "master" ]; then 
         docker tag kube-entropy:$COMMIT_TAG alexlokshin/kube-entropy:latest
