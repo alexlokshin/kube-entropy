@@ -9,8 +9,11 @@ env:
 go:
   - 1.11.x
 
-before_script:
-  - go get
+before_install:
+  - go get github.com/golang/dep/...
+
+install:
+  - $GOPATH/bin/dep ensure
 
 script:
   - env GOOS=linux GOARCH=arm go build
