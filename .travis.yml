@@ -10,7 +10,7 @@ go:
   - 1.11.x
 
 before_install:
-  - go get github.com/golang/dep/...
+  - curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
 
 install:
   - $GOPATH/bin/dep ensure
