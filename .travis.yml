@@ -28,5 +28,6 @@ after_success:
     docker tag kube-entropy:$COMMIT_TAG alexlokshin/kube-entropy:${COMMIT_TAG}
     if [ "$TRAVIS_BRANCH" == "master" ]; then 
         docker tag kube-entropy:$COMMIT_TAG alexlokshin/kube-entropy:latest
+        docker push alexlokshin/kube-entropy:latest
     fi
     docker push alexlokshin/kube-entropy:${COMMIT_TAG}
