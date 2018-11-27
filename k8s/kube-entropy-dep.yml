@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kube-entropy-deployment
+  labels:
+    app: kube-entropy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kube-entropy
+  template:
+    metadata:
+      labels:
+        app: kube-entropy
+    spec:
+      serviceAccountName: kube-entropy
+      containers:
+      - name: rotator
+        image: alexlokshin/kube-entropy:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "250m"
+          limits:
+            memory: "64Mi"
+            cpu: "250m"
+        volumeMounts:
+        - name: config
+          mountPath: /config
+	  volumes:
+	    - name: config
+		  configMap:
+		    name: kube-entropy-config

@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kube-entropy-config
+  namespace: default
+data:
+  config.yaml: |
+    nodeSelectors:
+      fields:
+        - spec.unschedulable!=true
+      labels:
+    podSelectors:
+      fields:
+        - metadata.namespace=default
+        - metadata.namespace!=kube-system
+        - metadata.namespace!=docker
+      labels:
+        - app=my-nginx
+    serviceHealthCheck:
+      minPods: 2
+    node: localhost
