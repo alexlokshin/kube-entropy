@@ -17,12 +17,12 @@ install:
 
 script:
   - env GOOS=linux GOARCH=arm go build
-  - docker build . -t kube-entropy:$TRAVIS_BRANCH_$TRAVIS_BUILD_NUMBER_$TRAVIS_COMMIT
+  - docker build . -t kube-entropy:"$TRAVIS_BRANCH_$TRAVIS_BUILD_NUMBER_$TRAVIS_COMMIT"
 
 after_success:
   - |
     echo ${DOCKER_PASSWORD} | docker login --username "alexlokshin" --password-stdin
-    export COMMIT_TAG="$TRAVIS_BRANCH"_"$TRAVIS_COMMIT"
+    export COMMIT_TAG="$TRAVIS_BRANCH_$TRAVIS_BUILD_NUMBER_$TRAVIS_COMMIT"
     docker tag kube-entropy:$COMMIT_TAG alexlokshin/kube-entropy:${COMMIT_TAG}
     if [ "$TRAVIS_BRANCH" == "master" ]; then 
         docker tag kube-entropy:$COMMIT_TAG alexlokshin/kube-entropy:latest
