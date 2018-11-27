@@ -68,42 +68,53 @@ func homeDir() string {
 }
 
 func killNodes(clientset *kubernetes.Clientset) {
-	listOptions := listSelectors(ec.NodeSelectors)
+
+	nodes := &v1.NodeList{}
+	var err error
+	// Attempt to get a list of all scheduleable nodes
 	for true {
-		nodes, err := clientset.CoreV1().Nodes().List(listOptions)
+		listOptions := listSelectors(ec.NodeSelectors)
+		nodes, err = clientset.CoreV1().Nodes().List(listOptions)
 		if err != nil {
 			log.Printf("Cannot get a list of nodes. Skipping for now: %v\n", err)
+			time.Sleep(time.Duration(1 * time.Minute))
+			continue
 		} else {
 			log.Printf("%d nodes found\n", len(nodes.Items))
-			// Make all nodes schedulable
-			for i := 0; i < len(nodes.Items); i++ {
-				node := nodes.Items[i]
-				if node.Spec.Unschedulable == true {
-					node.Spec.Unschedulable = false
-					_, err = clientset.CoreV1().Nodes().Update(&node)
-					if err != nil {
-						log.Printf("Cannot uncordon the node: %v\n", err)
-					}
+		}
+		break
+	}
+
+	// Randomly make some of the node unschedulable
+	for true {
+		// Make all nodes schedulable
+		for i := 0; i < len(nodes.Items); i++ {
+			node := nodes.Items[i]
+			if node.Spec.Unschedulable == true {
+				node.Spec.Unschedulable = false
+				_, err = clientset.CoreV1().Nodes().Update(&node)
+				if err != nil {
+					log.Printf("Cannot uncordon the node: %v\n", err)
 				}
 			}
+		}
 
-			// And randomly unschedule one
-			randomIndex := rand.Intn(len(nodes.Items))
-			log.Printf("%d nodes found\n", len(nodes.Items))
-			if len(nodes.Items) == 1 {
-				log.Println("Only 1 node found, cannot cordon it off.")
-			} else {
-				for i := 0; i < len(nodes.Items); i++ {
-					node := nodes.Items[i]
-					if i == randomIndex {
-						log.Printf("Cordoning off %s\n", node.Name)
-						node.Spec.Unschedulable = true
-						_, err = clientset.CoreV1().Nodes().Update(&node)
-						if err != nil {
-							log.Printf("Cannot cordon the node: %v\n", err)
-						}
-						// TODO: Drain the node
+		// And randomly unschedule one
+		randomIndex := rand.Intn(len(nodes.Items))
+		log.Printf("%d nodes found\n", len(nodes.Items))
+		if len(nodes.Items) == 1 {
+			log.Println("Only 1 node found, cannot cordon it off.")
+		} else {
+			for i := 0; i < len(nodes.Items); i++ {
+				node := nodes.Items[i]
+				if i == randomIndex {
+					log.Printf("Cordoning off %s\n", node.Name)
+					node.Spec.Unschedulable = true
+					_, err = clientset.CoreV1().Nodes().Update(&node)
+					if err != nil {
+						log.Printf("Cannot cordon the node: %v\n", err)
 					}
+					// TODO: Drain the node
 				}
 			}
 		}
