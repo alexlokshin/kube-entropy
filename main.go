@@ -23,14 +23,23 @@ import (
 )
 
 type entropySelectors struct {
-	Fields []string `yaml:"fields"`
-	Labels []string `yaml:"labels"`
+	Fields   []string      `yaml:"fields"`
+	Labels   []string      `yaml:"labels"`
+	Enabled  bool          `yaml:"enabled"`
+	Interval time.Duration `yaml:"interval"`
+}
+
+type monitoringSettings struct {
+	Enabled          bool             `yaml:"enabled"`
+	NodePortHost     string           `yaml:"nodePortHost"`
+	ServiceSelectors entropySelectors `yaml:"serviceSelectors"`
 }
 
 type entropyConfig struct {
 	NodeSelectors entropySelectors `yaml:"nodeSelectors"`
 	PodSelectors  entropySelectors `yaml:"podSelectors"`
-	Node          string           `yaml:"node"`
+
+	MonitoringSettings monitoringSettings `yaml:"monitoring"`
 }
 
 var ec entropyConfig
@@ -119,7 +128,10 @@ func killNodes(clientset *kubernetes.Clientset) {
 			}
 		}
 
-		time.Sleep(time.Duration(rand.Intn(5)) * time.Minute)
+		//time.Sleep(time.Duration(rand.Intn(5)) * time.Minute)
+		duration := time.Duration(rand.Int63n(ec.NodeSelectors.Interval.Nanoseconds())) * time.Nanosecond
+		log.Printf("For next node cordon sleeping for %s\n", duration)
+		time.Sleep(duration)
 	}
 }
 
@@ -141,12 +153,17 @@ func killPods(clientset *kubernetes.Clientset) {
 				}
 			}
 		}
-		time.Sleep(time.Duration(rand.Intn(30)) * time.Second)
+		//time.Sleep(time.Duration(rand.Int63n(ec.PodSelectors.Interval.Nanoseconds())) * time.Nanosecond)
+		//time.Sleep(time.Duration(rand.Intn(30)) * time.Second)
+
+		duration := time.Duration(rand.Int63n(ec.PodSelectors.Interval.Nanoseconds())) * time.Nanosecond
+		log.Printf("For next pod deletion sleeping for %s\n", duration)
+		time.Sleep(duration)
 	}
 }
 
 func monitor(clientset *kubernetes.Clientset) {
-	listOptions := listSelectors(ec.PodSelectors)
+	listOptions := listSelectors(ec.MonitoringSettings.ServiceSelectors)
 	for true {
 		services, err := clientset.CoreV1().Services("").List(listOptions)
 		if err != nil {
@@ -165,7 +182,7 @@ func monitor(clientset *kubernetes.Clientset) {
 					// When testing out of cluster, only NodePort and ingress routes can be tested, LoadBalancer and ingresses are not supported yet
 					if service.Spec.Type == v1.ServiceTypeNodePort {
 						if element.NodePort > 0 {
-							uri = ec.Node + ":" + strconv.Itoa(int(element.NodePort))
+							uri = ec.MonitoringSettings.NodePortHost + ":" + strconv.Itoa(int(element.NodePort))
 						} else {
 							uri = ""
 						}
@@ -184,7 +201,7 @@ func monitor(clientset *kubernetes.Clientset) {
 				}
 			}
 		}
-		time.Sleep(2 * time.Second)
+		time.Sleep(ec.MonitoringSettings.ServiceSelectors.Interval)
 	}
 }
 
@@ -221,14 +238,19 @@ func main() {
 
 	log.Printf("Starting kube-entropy.\n")
 	rand.Seed(time.Now().UnixNano())
+	log.Printf("Monitoring services every %s.\n", ec.MonitoringSettings.ServiceSelectors.Interval)
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		betterPanic(err.Error())
 	} else {
 		log.Printf("Entropying it up.\n")
-		go killPods(clientset)
-		go killNodes(clientset)
+		if ec.PodSelectors.Enabled {
+			go killPods(clientset)
+		}
+		if ec.NodeSelectors.Enabled {
+			go killNodes(clientset)
+		}
 		go monitor(clientset)
 		for true {
 			time.Sleep(30 * time.Second)
