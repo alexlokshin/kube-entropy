@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"math/rand"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -30,15 +31,17 @@ type entropySelectors struct {
 }
 
 type monitoringSettings struct {
-	Enabled          bool             `yaml:"enabled"`
-	NodePortHost     string           `yaml:"nodePortHost"`
-	ServiceSelectors entropySelectors `yaml:"serviceSelectors"`
+	NodePortHost      string           `yaml:"nodePortHost"`
+	DefaultIngressURL string           `yaml:"defaultIngressUrl"`
+	IngressProtocol   string           `yaml:"ingressProtocol"`
+	IngressPort       string           `yaml:"ingressPort"`
+	ServiceSelectors  entropySelectors `yaml:"serviceSelectors"`
+	IngressSelectors  entropySelectors `yaml:"ingressSelectors"`
 }
 
 type entropyConfig struct {
-	NodeSelectors entropySelectors `yaml:"nodeSelectors"`
-	PodSelectors  entropySelectors `yaml:"podSelectors"`
-
+	NodeSelectors      entropySelectors   `yaml:"nodeSelectors"`
+	PodSelectors       entropySelectors   `yaml:"podSelectors"`
 	MonitoringSettings monitoringSettings `yaml:"monitoring"`
 }
 
@@ -162,7 +165,7 @@ func killPods(clientset *kubernetes.Clientset) {
 	}
 }
 
-func monitor(clientset *kubernetes.Clientset) {
+func monitorServices(clientset *kubernetes.Clientset) {
 	listOptions := listSelectors(ec.MonitoringSettings.ServiceSelectors)
 	for true {
 		services, err := clientset.CoreV1().Services("").List(listOptions)
@@ -197,6 +200,45 @@ func monitor(clientset *kubernetes.Clientset) {
 							log.Printf("could not connect to service %s: %v\n", uri, err)
 						}
 						defer conn.Close()
+					}()
+				}
+			}
+		}
+		time.Sleep(ec.MonitoringSettings.ServiceSelectors.Interval)
+	}
+}
+
+func monitorIngresses(clientset *kubernetes.Clientset) {
+	listOptions := listSelectors(ec.MonitoringSettings.IngressSelectors)
+	for true {
+		ingresses, err := clientset.Extensions().Ingresses("").List(listOptions)
+		if err != nil {
+			log.Printf("ERROR: Cannot get a list of ingresses. Skipping for now. %v\n", err)
+		}
+		for i := 0; i < len(ingresses.Items); i++ {
+			ingress := ingresses.Items[i]
+
+			for _, element := range ingress.Spec.Rules {
+				host := ec.MonitoringSettings.DefaultIngressURL
+				if len(strings.TrimSpace(element.Host)) > 0 {
+					protocol := "https"
+					if len(ec.MonitoringSettings.IngressProtocol) > 0 {
+						protocol = ec.MonitoringSettings.IngressProtocol
+					}
+					port := "443"
+					if len(ec.MonitoringSettings.IngressPort) > 0 {
+						port = ec.MonitoringSettings.IngressPort
+					}
+					host = protocol + "://" + strings.TrimSpace(element.Host) + ":" + port
+				}
+				for _, path := range element.HTTP.Paths {
+					uri := host + path.Path
+					go func() {
+						resp, err := http.Get(uri)
+						if err != nil {
+							log.Printf("Cannot do http GET against %s.\n", uri)
+						}
+						defer resp.Body.Close()
 					}()
 				}
 			}
@@ -246,12 +288,24 @@ func main() {
 	} else {
 		log.Printf("Entropying it up.\n")
 		if ec.PodSelectors.Enabled {
+			log.Printf("Launching the pod killer.\n")
 			go killPods(clientset)
 		}
 		if ec.NodeSelectors.Enabled {
+			log.Printf("Launching the node killer.\n")
 			go killNodes(clientset)
 		}
-		go monitor(clientset)
+
+		if ec.MonitoringSettings.ServiceSelectors.Enabled {
+			log.Printf("Launching the service monitor.\n")
+			go monitorServices(clientset)
+		}
+
+		if ec.MonitoringSettings.IngressSelectors.Enabled {
+			log.Printf("Launching the ingress monitor.\n")
+			go monitorIngresses(clientset)
+		}
+
 		for true {
 			time.Sleep(30 * time.Second)
 		}

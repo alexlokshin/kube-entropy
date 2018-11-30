@@ -16,7 +16,9 @@ podSelectors:
   interval: 30s
 monitoring:
   nodePortHost: localhost
-  ingressHost: https://www.avsatum.com/
+  defaultIngressUrl: https://www.avsatum.com:443/
+  ingressProtocol: https
+  ingressPort: 443
   serviceSelectors:
     enabled: true
     interval: 2s
