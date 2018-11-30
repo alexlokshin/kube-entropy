@@ -5,13 +5,13 @@ metadata:
   namespace: default
 data:
   config.yaml: |
-    nodeSelectors:
+    nodeChaos:
       enabled: true
       fields:
         - spec.unschedulable!=true
       labels:
       interval: 5m
-    podSelectors:
+    podChaos:
       enabled: true
       fields:
         - metadata.namespace=default
@@ -22,8 +22,10 @@ data:
       interval: 30s
     monitoring:
       nodePortHost: localhost
-      ingressHost: https://www.avsatum.com/
-      serviceSelectors:
+      defaultIngressUrl: https://www.avsatum.com:443/
+      ingressProtocol: https
+      ingressPort: 443
+      serviceMonitoring:
         enabled: true
         interval: 2s
         fields:
@@ -32,7 +34,7 @@ data:
           - metadata.namespace!=docker
         labels:
           - app=my-nginx
-      ingressSelectors:
+      ingressMonitoring:
         enabled: false
         interval: 2s
         fields:

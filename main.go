@@ -23,7 +23,7 @@ import (
 	"net"
 )
 
-type entropySelectors struct {
+type entropySelector struct {
 	Fields   []string      `yaml:"fields"`
 	Labels   []string      `yaml:"labels"`
 	Enabled  bool          `yaml:"enabled"`
@@ -31,17 +31,17 @@ type entropySelectors struct {
 }
 
 type monitoringSettings struct {
-	NodePortHost      string           `yaml:"nodePortHost"`
-	DefaultIngressURL string           `yaml:"defaultIngressUrl"`
-	IngressProtocol   string           `yaml:"ingressProtocol"`
-	IngressPort       string           `yaml:"ingressPort"`
-	ServiceSelectors  entropySelectors `yaml:"serviceSelectors"`
-	IngressSelectors  entropySelectors `yaml:"ingressSelectors"`
+	NodePortHost      string          `yaml:"nodePortHost"`
+	DefaultIngressURL string          `yaml:"defaultIngressUrl"`
+	IngressProtocol   string          `yaml:"ingressProtocol"`
+	IngressPort       string          `yaml:"ingressPort"`
+	ServiceMonitoring entropySelector `yaml:"serviceMonitoring"`
+	IngressMonitoring entropySelector `yaml:"ingressMonitoring"`
 }
 
 type entropyConfig struct {
-	NodeSelectors      entropySelectors   `yaml:"nodeSelectors"`
-	PodSelectors       entropySelectors   `yaml:"podSelectors"`
+	NodeChaos          entropySelector    `yaml:"nodeChaos"`
+	PodChaos           entropySelector    `yaml:"podChaos"`
 	MonitoringSettings monitoringSettings `yaml:"monitoring"`
 }
 
@@ -60,7 +60,7 @@ func combine(parts []string, separator string) (result string) {
 	return
 }
 
-func listSelectors(selectors entropySelectors) (listOptions metav1.ListOptions) {
+func listSelectors(selectors entropySelector) (listOptions metav1.ListOptions) {
 	listOptions = metav1.ListOptions{}
 	listOptions.FieldSelector = combine(selectors.Fields, ",")
 	listOptions.LabelSelector = combine(selectors.Labels, ",")
@@ -85,7 +85,7 @@ func killNodes(clientset *kubernetes.Clientset) {
 	var err error
 	// Attempt to get a list of all scheduleable nodes
 	for true {
-		listOptions := listSelectors(ec.NodeSelectors)
+		listOptions := listSelectors(ec.NodeChaos)
 		nodes, err = clientset.CoreV1().Nodes().List(listOptions)
 		if err != nil {
 			log.Printf("ERROR: Cannot get a list of nodes. Skipping for now: %v\n", err)
@@ -132,14 +132,14 @@ func killNodes(clientset *kubernetes.Clientset) {
 		}
 
 		//time.Sleep(time.Duration(rand.Intn(5)) * time.Minute)
-		duration := time.Duration(rand.Int63n(ec.NodeSelectors.Interval.Nanoseconds())) * time.Nanosecond
+		duration := time.Duration(rand.Int63n(ec.NodeChaos.Interval.Nanoseconds())) * time.Nanosecond
 		log.Printf("For next node cordon sleeping for %s\n", duration)
 		time.Sleep(duration)
 	}
 }
 
 func killPods(clientset *kubernetes.Clientset) {
-	listOptions := listSelectors(ec.PodSelectors)
+	listOptions := listSelectors(ec.PodChaos)
 	for true {
 		pods, err := clientset.CoreV1().Pods("").List(listOptions)
 		if err != nil {
@@ -156,17 +156,15 @@ func killPods(clientset *kubernetes.Clientset) {
 				}
 			}
 		}
-		//time.Sleep(time.Duration(rand.Int63n(ec.PodSelectors.Interval.Nanoseconds())) * time.Nanosecond)
-		//time.Sleep(time.Duration(rand.Intn(30)) * time.Second)
 
-		duration := time.Duration(rand.Int63n(ec.PodSelectors.Interval.Nanoseconds())) * time.Nanosecond
+		duration := time.Duration(rand.Int63n(ec.PodChaos.Interval.Nanoseconds())) * time.Nanosecond
 		log.Printf("For next pod deletion sleeping for %s\n", duration)
 		time.Sleep(duration)
 	}
 }
 
 func monitorServices(clientset *kubernetes.Clientset) {
-	listOptions := listSelectors(ec.MonitoringSettings.ServiceSelectors)
+	listOptions := listSelectors(ec.MonitoringSettings.ServiceMonitoring)
 	for true {
 		services, err := clientset.CoreV1().Services("").List(listOptions)
 		if err != nil {
@@ -204,12 +202,12 @@ func monitorServices(clientset *kubernetes.Clientset) {
 				}
 			}
 		}
-		time.Sleep(ec.MonitoringSettings.ServiceSelectors.Interval)
+		time.Sleep(ec.MonitoringSettings.ServiceMonitoring.Interval)
 	}
 }
 
 func monitorIngresses(clientset *kubernetes.Clientset) {
-	listOptions := listSelectors(ec.MonitoringSettings.IngressSelectors)
+	listOptions := listSelectors(ec.MonitoringSettings.IngressMonitoring)
 	for true {
 		ingresses, err := clientset.Extensions().Ingresses("").List(listOptions)
 		if err != nil {
@@ -243,7 +241,7 @@ func monitorIngresses(clientset *kubernetes.Clientset) {
 				}
 			}
 		}
-		time.Sleep(ec.MonitoringSettings.ServiceSelectors.Interval)
+		time.Sleep(ec.MonitoringSettings.ServiceMonitoring.Interval)
 	}
 }
 
@@ -280,28 +278,28 @@ func main() {
 
 	log.Printf("Starting kube-entropy.\n")
 	rand.Seed(time.Now().UnixNano())
-	log.Printf("Monitoring services every %s.\n", ec.MonitoringSettings.ServiceSelectors.Interval)
+	log.Printf("Monitoring services every %s.\n", ec.MonitoringSettings.ServiceMonitoring.Interval)
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		betterPanic(err.Error())
 	} else {
 		log.Printf("Entropying it up.\n")
-		if ec.PodSelectors.Enabled {
+		if ec.PodChaos.Enabled {
 			log.Printf("Launching the pod killer.\n")
 			go killPods(clientset)
 		}
-		if ec.NodeSelectors.Enabled {
+		if ec.NodeChaos.Enabled {
 			log.Printf("Launching the node killer.\n")
 			go killNodes(clientset)
 		}
 
-		if ec.MonitoringSettings.ServiceSelectors.Enabled {
+		if ec.MonitoringSettings.ServiceMonitoring.Enabled {
 			log.Printf("Launching the service monitor.\n")
 			go monitorServices(clientset)
 		}
 
-		if ec.MonitoringSettings.IngressSelectors.Enabled {
+		if ec.MonitoringSettings.IngressMonitoring.Enabled {
 			log.Printf("Launching the ingress monitor.\n")
 			go monitorIngresses(clientset)
 		}
