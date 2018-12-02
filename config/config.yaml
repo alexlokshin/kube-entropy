@@ -15,26 +15,32 @@ podChaos:
     - app=my-nginx
   interval: 30s
 monitoring:
-  nodePortHost: localhost
-  defaultIngressUrl: https://www.avsatum.com:443/
-  ingressProtocol: https
-  ingressPort: 443
   serviceMonitoring:
-    enabled: true
-    interval: 2s
-    fields:
-      - metadata.namespace=default
-      - metadata.namespace!=kube-system
-      - metadata.namespace!=docker
-    labels:
-      - app=my-nginx
+    nodePortHost: localhost
+    selector:
+      enabled: true
+      interval: 2s
+      fields:
+        - metadata.namespace=default
+        - metadata.namespace!=kube-system
+        - metadata.namespace!=docker
+      labels:
+        - app=my-nginx
   ingressMonitoring:
-    enabled: false
-    interval: 2s
-    fields:
-      - metadata.namespace=default
-      - metadata.namespace!=kube-system
-      - metadata.namespace!=docker
-    labels:
-      - app=my-nginx
+    protocol: https
+    port: 443
+    defaultHost: www.avsatum.com
+    selector:
+      enabled: false
+      interval: 2s
+      fields:
+        - metadata.namespace=default
+        - metadata.namespace!=kube-system
+        - metadata.namespace!=docker
+      labels:
+        - app=my-nginx
+    successHttpCodes:
+      - 2xx
+      - 30x
+      - 403
   

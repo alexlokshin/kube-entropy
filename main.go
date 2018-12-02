@@ -23,25 +23,34 @@ import (
 	"net"
 )
 
-type entropySelector struct {
+type EntropySelector struct {
 	Fields   []string      `yaml:"fields"`
 	Labels   []string      `yaml:"labels"`
 	Enabled  bool          `yaml:"enabled"`
 	Interval time.Duration `yaml:"interval"`
 }
 
+type ingressMonitoringConfig struct {
+	Selector         EntropySelector `yaml:"selector"`
+	DefaultHost      string          `yaml:"defaultHost"`
+	Protocol         string          `yaml:"protocol"`
+	Port             string          `yaml:"port"`
+	SuccessHTTPCodes []string        `yaml:"successHttpCodes"`
+}
+
+type serviceMonitoringConfig struct {
+	Selector     EntropySelector `yaml:"selector"`
+	NodePortHost string          `yaml:"nodePortHost"`
+}
+
 type monitoringSettings struct {
-	NodePortHost      string          `yaml:"nodePortHost"`
-	DefaultIngressURL string          `yaml:"defaultIngressUrl"`
-	IngressProtocol   string          `yaml:"ingressProtocol"`
-	IngressPort       string          `yaml:"ingressPort"`
-	ServiceMonitoring entropySelector `yaml:"serviceMonitoring"`
-	IngressMonitoring entropySelector `yaml:"ingressMonitoring"`
+	ServiceMonitoring serviceMonitoringConfig `yaml:"serviceMonitoring"`
+	IngressMonitoring ingressMonitoringConfig `yaml:"ingressMonitoring"`
 }
 
 type entropyConfig struct {
-	NodeChaos          entropySelector    `yaml:"nodeChaos"`
-	PodChaos           entropySelector    `yaml:"podChaos"`
+	NodeChaos          EntropySelector    `yaml:"nodeChaos"`
+	PodChaos           EntropySelector    `yaml:"podChaos"`
 	MonitoringSettings monitoringSettings `yaml:"monitoring"`
 }
 
@@ -60,7 +69,7 @@ func combine(parts []string, separator string) (result string) {
 	return
 }
 
-func listSelectors(selectors entropySelector) (listOptions metav1.ListOptions) {
+func listSelectors(selectors EntropySelector) (listOptions metav1.ListOptions) {
 	listOptions = metav1.ListOptions{}
 	listOptions.FieldSelector = combine(selectors.Fields, ",")
 	listOptions.LabelSelector = combine(selectors.Labels, ",")
@@ -131,7 +140,6 @@ func killNodes(clientset *kubernetes.Clientset) {
 			}
 		}
 
-		//time.Sleep(time.Duration(rand.Intn(5)) * time.Minute)
 		duration := time.Duration(rand.Int63n(ec.NodeChaos.Interval.Nanoseconds())) * time.Nanosecond
 		log.Printf("For next node cordon sleeping for %s\n", duration)
 		time.Sleep(duration)
@@ -164,7 +172,7 @@ func killPods(clientset *kubernetes.Clientset) {
 }
 
 func monitorServices(clientset *kubernetes.Clientset) {
-	listOptions := listSelectors(ec.MonitoringSettings.ServiceMonitoring)
+	listOptions := listSelectors(ec.MonitoringSettings.ServiceMonitoring.Selector)
 	for true {
 		services, err := clientset.CoreV1().Services("").List(listOptions)
 		if err != nil {
@@ -183,7 +191,7 @@ func monitorServices(clientset *kubernetes.Clientset) {
 					// When testing out of cluster, only NodePort and ingress routes can be tested, LoadBalancer and ingresses are not supported yet
 					if service.Spec.Type == v1.ServiceTypeNodePort {
 						if element.NodePort > 0 {
-							uri = ec.MonitoringSettings.NodePortHost + ":" + strconv.Itoa(int(element.NodePort))
+							uri = ec.MonitoringSettings.ServiceMonitoring.NodePortHost + ":" + strconv.Itoa(int(element.NodePort))
 						} else {
 							uri = ""
 						}
@@ -202,12 +210,21 @@ func monitorServices(clientset *kubernetes.Clientset) {
 				}
 			}
 		}
-		time.Sleep(ec.MonitoringSettings.ServiceMonitoring.Interval)
+		time.Sleep(ec.MonitoringSettings.ServiceMonitoring.Selector.Interval)
 	}
 }
 
+func IsSuccessHTTPCode(validCodes []string, code string) (result bool) {
+	for _, validCode := range validCodes {
+		if len(code) == len(validCode) && strings.HasPrefix(code, strings.TrimRight(validCode, "x")) {
+			return true
+		}
+	}
+	return false
+}
+
 func monitorIngresses(clientset *kubernetes.Clientset) {
-	listOptions := listSelectors(ec.MonitoringSettings.IngressMonitoring)
+	listOptions := listSelectors(ec.MonitoringSettings.IngressMonitoring.Selector)
 	for true {
 		ingresses, err := clientset.Extensions().Ingresses("").List(listOptions)
 		if err != nil {
@@ -217,15 +234,15 @@ func monitorIngresses(clientset *kubernetes.Clientset) {
 			ingress := ingresses.Items[i]
 
 			for _, element := range ingress.Spec.Rules {
-				host := ec.MonitoringSettings.DefaultIngressURL
+				host := ec.MonitoringSettings.IngressMonitoring.Protocol + "://" + ec.MonitoringSettings.IngressMonitoring.DefaultHost + ":" + ec.MonitoringSettings.IngressMonitoring.Port
 				if len(strings.TrimSpace(element.Host)) > 0 {
 					protocol := "https"
-					if len(ec.MonitoringSettings.IngressProtocol) > 0 {
-						protocol = ec.MonitoringSettings.IngressProtocol
+					if len(ec.MonitoringSettings.IngressMonitoring.Protocol) > 0 {
+						protocol = ec.MonitoringSettings.IngressMonitoring.Protocol
 					}
 					port := "443"
-					if len(ec.MonitoringSettings.IngressPort) > 0 {
-						port = ec.MonitoringSettings.IngressPort
+					if len(ec.MonitoringSettings.IngressMonitoring.Port) > 0 {
+						port = ec.MonitoringSettings.IngressMonitoring.Port
 					}
 					host = protocol + "://" + strings.TrimSpace(element.Host) + ":" + port
 				}
@@ -234,14 +251,31 @@ func monitorIngresses(clientset *kubernetes.Clientset) {
 					go func() {
 						resp, err := http.Get(uri)
 						if err != nil {
+							// Timeout, DNS doesn't resolve, wrong protocol etc
 							log.Printf("Cannot do http GET against %s.\n", uri)
+						} else {
+							if !IsSuccessHTTPCode(ec.MonitoringSettings.IngressMonitoring.SuccessHTTPCodes, strconv.Itoa(resp.StatusCode)) {
+								log.Printf("Unexpected http code %d when calling %s.\n", resp.StatusCode, uri)
+							}
 						}
 						defer resp.Body.Close()
 					}()
 				}
 			}
 		}
-		time.Sleep(ec.MonitoringSettings.ServiceMonitoring.Interval)
+		time.Sleep(ec.MonitoringSettings.ServiceMonitoring.Selector.Interval)
+	}
+}
+
+func readConfig() {
+	configFileData, err := ioutil.ReadFile("./config/config.yaml")
+	if err != nil {
+		log.Printf("ERROR: Config file cannot be read. #%v\n", err)
+	}
+
+	err = yaml.Unmarshal(configFileData, &ec)
+	if err != nil {
+		betterPanic(err.Error())
 	}
 }
 
@@ -266,19 +300,11 @@ func main() {
 	}
 	inCluster = false
 
-	configFileData, err := ioutil.ReadFile("./config/config.yaml")
-	if err != nil {
-		log.Printf("ERROR: Config file cannot be read. #%v\n", err)
-	}
-
-	err = yaml.Unmarshal(configFileData, &ec)
-	if err != nil {
-		betterPanic(err.Error())
-	}
+	readConfig()
 
 	log.Printf("Starting kube-entropy.\n")
 	rand.Seed(time.Now().UnixNano())
-	log.Printf("Monitoring services every %s.\n", ec.MonitoringSettings.ServiceMonitoring.Interval)
+	log.Printf("Monitoring services every %s.\n", ec.MonitoringSettings.ServiceMonitoring.Selector.Interval)
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
@@ -294,12 +320,12 @@ func main() {
 			go killNodes(clientset)
 		}
 
-		if ec.MonitoringSettings.ServiceMonitoring.Enabled {
+		if ec.MonitoringSettings.ServiceMonitoring.Selector.Enabled {
 			log.Printf("Launching the service monitor.\n")
 			go monitorServices(clientset)
 		}
 
-		if ec.MonitoringSettings.IngressMonitoring.Enabled {
+		if ec.MonitoringSettings.IngressMonitoring.Selector.Enabled {
 			log.Printf("Launching the ingress monitor.\n")
 			go monitorIngresses(clientset)
 		}
