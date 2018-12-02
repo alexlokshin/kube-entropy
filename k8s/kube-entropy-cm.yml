@@ -5,17 +5,48 @@ metadata:
   namespace: default
 data:
   config.yaml: |
-    nodeSelectors:
+    nodeChaos:
+      enabled: true
       fields:
         - spec.unschedulable!=true
       labels:
-    podSelectors:
+      interval: 5m
+    podChaos:
+      enabled: true
       fields:
         - metadata.namespace=default
         - metadata.namespace!=kube-system
         - metadata.namespace!=docker
       labels:
         - app=my-nginx
-    serviceHealthCheck:
-      minPods: 2
-    node: localhost
+      interval: 30s
+    monitoring:
+      serviceMonitoring:
+        nodePortHost: localhost
+        selector:
+          enabled: true
+          interval: 2s
+          fields:
+            - metadata.namespace=default
+            - metadata.namespace!=kube-system
+            - metadata.namespace!=docker
+          labels:
+            - app=my-nginx
+      ingressMonitoring:
+        protocol: https
+        port: 443
+        defaultHost: www.avsatum.com
+        selector:
+          enabled: false
+          interval: 2s
+          fields:
+            - metadata.namespace=default
+            - metadata.namespace!=kube-system
+            - metadata.namespace!=docker
+          labels:
+            - app=my-nginx
+        successHttpCodes:
+          - 2xx
+          - 30x
+          - 403
+      

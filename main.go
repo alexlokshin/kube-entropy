@@ -8,29 +8,45 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
 	yaml "gopkg.in/yaml.v2"
-	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-
-	"net"
 )
 
-type entropySelectors struct {
-	Fields []string `yaml:"fields"`
-	Labels []string `yaml:"labels"`
+type entropySelector struct {
+	Fields   []string      `yaml:"fields"`
+	Labels   []string      `yaml:"labels"`
+	Enabled  bool          `yaml:"enabled"`
+	Interval time.Duration `yaml:"interval"`
+}
+
+type ingressMonitoringConfig struct {
+	Selector         entropySelector `yaml:"selector"`
+	DefaultHost      string          `yaml:"defaultHost"`
+	Protocol         string          `yaml:"protocol"`
+	Port             string          `yaml:"port"`
+	SuccessHTTPCodes []string        `yaml:"successHttpCodes"`
+}
+
+type serviceMonitoringConfig struct {
+	Selector     entropySelector `yaml:"selector"`
+	NodePortHost string          `yaml:"nodePortHost"`
+}
+
+type monitoringSettings struct {
+	ServiceMonitoring serviceMonitoringConfig `yaml:"serviceMonitoring"`
+	IngressMonitoring ingressMonitoringConfig `yaml:"ingressMonitoring"`
 }
 
 type entropyConfig struct {
-	NodeSelectors entropySelectors `yaml:"nodeSelectors"`
-	PodSelectors  entropySelectors `yaml:"podSelectors"`
-	Node          string           `yaml:"node"`
+	NodeChaos          entropySelector    `yaml:"nodeChaos"`
+	PodChaos           entropySelector    `yaml:"podChaos"`
+	MonitoringSettings monitoringSettings `yaml:"monitoring"`
 }
 
 var ec entropyConfig
@@ -48,7 +64,7 @@ func combine(parts []string, separator string) (result string) {
 	return
 }
 
-func listSelectors(selectors entropySelectors) (listOptions metav1.ListOptions) {
+func listSelectors(selectors entropySelector) (listOptions metav1.ListOptions) {
 	listOptions = metav1.ListOptions{}
 	listOptions.FieldSelector = combine(selectors.Fields, ",")
 	listOptions.LabelSelector = combine(selectors.Labels, ",")
@@ -67,128 +83,23 @@ func homeDir() string {
 	return os.Getenv("USERPROFILE") // windows
 }
 
-func killNodes(clientset *kubernetes.Clientset) {
-
-	nodes := &v1.NodeList{}
-	var err error
-	// Attempt to get a list of all scheduleable nodes
-	for true {
-		listOptions := listSelectors(ec.NodeSelectors)
-		nodes, err = clientset.CoreV1().Nodes().List(listOptions)
-		if err != nil {
-			log.Printf("ERROR: Cannot get a list of nodes. Skipping for now: %v\n", err)
-			time.Sleep(time.Duration(1 * time.Minute))
-			continue
-		} else {
-			log.Printf("%d nodes found\n", len(nodes.Items))
-		}
-		break
+func readConfig(configFileName string) {
+	configFileData, err := ioutil.ReadFile(configFileName)
+	if err != nil {
+		log.Printf("ERROR: Config file %s cannot be read. #%v\n", configFileName, err)
+		betterPanic("Shutting down.")
 	}
 
-	// Randomly make some of the node unschedulable
-	for true {
-		// Make all nodes schedulable
-		for i := 0; i < len(nodes.Items); i++ {
-			node := nodes.Items[i]
-			if node.Spec.Unschedulable == true {
-				node.Spec.Unschedulable = false
-				_, err = clientset.CoreV1().Nodes().Update(&node)
-				if err != nil {
-					log.Printf("ERROR: Cannot uncordon the node: %v\n", err)
-				}
-			}
-		}
-
-		// And randomly unschedule one
-		randomIndex := rand.Intn(len(nodes.Items))
-		log.Printf("%d nodes found\n", len(nodes.Items))
-		if len(nodes.Items) == 1 {
-			log.Println("ERROR: Only 1 node found, cannot cordon it off.")
-		} else {
-			for i := 0; i < len(nodes.Items); i++ {
-				node := nodes.Items[i]
-				if i == randomIndex {
-					log.Printf("Cordoning off %s\n", node.Name)
-					node.Spec.Unschedulable = true
-					_, err = clientset.CoreV1().Nodes().Update(&node)
-					if err != nil {
-						log.Printf("ERROR: Cannot cordon the node: %v\n", err)
-					}
-					// TODO: Drain the node
-				}
-			}
-		}
-
-		time.Sleep(time.Duration(rand.Intn(5)) * time.Minute)
-	}
-}
-
-func killPods(clientset *kubernetes.Clientset) {
-	listOptions := listSelectors(ec.PodSelectors)
-	for true {
-		pods, err := clientset.CoreV1().Pods("").List(listOptions)
-		if err != nil {
-			log.Printf("ERROR: Cannot get a list of running pods. Skipping for now. %v\n", err)
-		} else {
-			randomIndex := rand.Intn(len(pods.Items))
-			for i := 0; i < len(pods.Items); i++ {
-				if i == randomIndex {
-					log.Printf("Force deleting pod %s.%s\n", pods.Items[i].Namespace, pods.Items[i].Name)
-					err := clientset.CoreV1().Pods(pods.Items[i].Namespace).Delete(pods.Items[i].Name, metav1.NewDeleteOptions(0))
-					if err != nil {
-						log.Printf("ERROR: Cannot delete a pod %s.%s: %v\n", pods.Items[i].Namespace, pods.Items[i].Name, err)
-					}
-				}
-			}
-		}
-		time.Sleep(time.Duration(rand.Intn(30)) * time.Second)
-	}
-}
-
-func monitor(clientset *kubernetes.Clientset) {
-	listOptions := listSelectors(ec.PodSelectors)
-	for true {
-		services, err := clientset.CoreV1().Services("").List(listOptions)
-		if err != nil {
-			log.Printf("ERROR: Cannot get a list of services. Skipping for now. %v\n", err)
-		}
-		for i := 0; i < len(services.Items); i++ {
-			service := services.Items[i]
-			if service.Spec.Type == v1.ServiceTypeExternalName {
-				// This is just a proxy, it has no pods, nothing to test
-				continue
-			}
-
-			for _, element := range service.Spec.Ports {
-				uri := service.Name + "." + service.Namespace + ".svc:" + element.TargetPort.String()
-				if !inCluster {
-					// When testing out of cluster, only NodePort and ingress routes can be tested, LoadBalancer and ingresses are not supported yet
-					if service.Spec.Type == v1.ServiceTypeNodePort {
-						if element.NodePort > 0 {
-							uri = ec.Node + ":" + strconv.Itoa(int(element.NodePort))
-						} else {
-							uri = ""
-						}
-					}
-				}
-
-				if len(uri) > 0 {
-					go func() {
-						log.Printf("Connecting to %s\n", uri)
-						conn, err := net.Dial(strings.ToLower(string(element.Protocol)), uri)
-						if err != nil {
-							log.Printf("could not connect to service %s: %v\n", uri, err)
-						}
-						defer conn.Close()
-					}()
-				}
-			}
-		}
-		time.Sleep(2 * time.Second)
+	err = yaml.Unmarshal(configFileData, &ec)
+	if err != nil {
+		betterPanic(err.Error())
 	}
 }
 
 func main() {
+	configFileName := flag.String("config", "./config/config.yaml", "Configuration file for the kube-entropy.")
+	flag.Parse()
+
 	var kubeconfig *string
 	home := homeDir()
 	if home != "" {
@@ -209,14 +120,11 @@ func main() {
 	}
 	inCluster = false
 
-	configFileData, err := ioutil.ReadFile("./config/config.yaml")
-	if err != nil {
-		log.Printf("ERROR: Config file cannot be read. #%v\n", err)
-	}
-
-	err = yaml.Unmarshal(configFileData, &ec)
-	if err != nil {
-		betterPanic(err.Error())
+	readConfig(*configFileName)
+	if inCluster {
+		log.Printf("Configured to run in in-cluster mode.\n")
+	} else {
+		log.Printf("Configured to run in out-of cluster mode.\nService testing is not supported.")
 	}
 
 	log.Printf("Starting kube-entropy.\n")
@@ -227,9 +135,29 @@ func main() {
 		betterPanic(err.Error())
 	} else {
 		log.Printf("Entropying it up.\n")
-		go killPods(clientset)
-		go killNodes(clientset)
-		go monitor(clientset)
+		if ec.PodChaos.Enabled {
+			log.Printf("Launching the pod killer.\n")
+			go killPods(clientset)
+		}
+		if ec.NodeChaos.Enabled {
+			log.Printf("Launching the node killer.\n")
+			go killNodes(clientset)
+		}
+
+		if ec.MonitoringSettings.ServiceMonitoring.Selector.Enabled {
+			log.Printf("Launching the service monitor.\n")
+			log.Printf("Monitoring services every %s.\n", ec.MonitoringSettings.ServiceMonitoring.Selector.Interval)
+
+			go monitorServices(clientset)
+		}
+
+		if ec.MonitoringSettings.IngressMonitoring.Selector.Enabled {
+			log.Printf("Launching the ingress monitor.\n")
+			log.Printf("Monitoring ingresses every %s.\n", ec.MonitoringSettings.IngressMonitoring.Selector.Interval)
+
+			go monitorIngresses(clientset)
+		}
+
 		for true {
 			time.Sleep(30 * time.Second)
 		}
