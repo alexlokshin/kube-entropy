@@ -124,7 +124,7 @@ func main() {
 	if inCluster {
 		log.Printf("Configured to run in in-cluster mode.\n")
 	} else {
-		log.Printf("Configured to run in out-of cluster mode.\nService testing is not supported.")
+		log.Printf("Configured to run in out-of cluster mode.\nService testing other than NodePort is not supported.")
 	}
 
 	log.Printf("Starting kube-entropy.\n")
@@ -134,6 +134,13 @@ func main() {
 	if err != nil {
 		betterPanic(err.Error())
 	} else {
+		nodes, err := clientset.CoreV1().Nodes().List(metav1.ListOptions{})
+		if err != nil {
+			betterPanic(err.Error())
+		} else {
+			log.Printf("Your cluster has a total of %d nodes.\n", len(nodes.Items))
+		}
+
 		log.Printf("Entropying it up.\n")
 		if ec.PodChaos.Enabled {
 			log.Printf("Launching the pod killer.\n")
@@ -144,11 +151,13 @@ func main() {
 			go killNodes(clientset)
 		}
 
-		if ec.MonitoringSettings.ServiceMonitoring.Selector.Enabled {
-			log.Printf("Launching the service monitor.\n")
-			log.Printf("Monitoring services every %s.\n", ec.MonitoringSettings.ServiceMonitoring.Selector.Interval)
+		if inCluster {
+			if ec.MonitoringSettings.ServiceMonitoring.Selector.Enabled {
+				log.Printf("Launching the service monitor.\n")
+				log.Printf("Monitoring services every %s.\n", ec.MonitoringSettings.ServiceMonitoring.Selector.Interval)
 
-			go monitorServices(clientset)
+				go monitorServices(clientset)
+			}
 		}
 
 		if ec.MonitoringSettings.IngressMonitoring.Selector.Enabled {
