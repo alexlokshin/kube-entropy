@@ -21,3 +21,9 @@ func Test_ValidateHttpCodes(t *testing.T) {
 	assert.Equal(t, false, IsSuccessHTTPCode([]string{"x"}, "50"))
 	assert.Equal(t, true, IsSuccessHTTPCode([]string{"x"}, "5"))
 }
+
+func Test_loadConfig(t *testing.T) {
+	ec, err := readConfig("./config/config.yaml")
+	assert.Equal(t, true, err == nil)
+	assert.Equal(t, true, ec.MonitoringSettings.IngressMonitoring.Port == "443")
+}

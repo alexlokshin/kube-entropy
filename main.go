@@ -83,17 +83,18 @@ func homeDir() string {
 	return os.Getenv("USERPROFILE") // windows
 }
 
-func readConfig(configFileName string) {
+func readConfig(configFileName string) (ec entropyConfig, err error) {
 	configFileData, err := ioutil.ReadFile(configFileName)
 	if err != nil {
 		log.Printf("ERROR: Config file %s cannot be read. #%v\n", configFileName, err)
-		betterPanic("Shutting down.")
+		return entropyConfig{}, err
 	}
 
 	err = yaml.Unmarshal(configFileData, &ec)
 	if err != nil {
-		betterPanic(err.Error())
+		return entropyConfig{}, err
 	}
+	return ec, nil
 }
 
 func main() {
@@ -120,7 +121,11 @@ func main() {
 	}
 	inCluster = false
 
-	readConfig(*configFileName)
+	_, err = readConfig(*configFileName)
+	if err != nil {
+		betterPanic(err.Error())
+	}
+
 	if inCluster {
 		log.Printf("Configured to run in in-cluster mode.\n")
 	} else {
