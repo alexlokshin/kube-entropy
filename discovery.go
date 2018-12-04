@@ -2,11 +2,14 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"net/http"
 	"os"
 
 	"io/ioutil"
 
 	"gopkg.in/yaml.v2"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -15,18 +18,21 @@ type NodeState struct {
 }
 
 type EndpointState struct {
-	Url  string
-	Code int
+	Url         string `yaml:"url"`
+	ContentType string `yaml:"contentType"`
+	Code        int    `yaml:"code"`
+	PodSelector map[string]string
 }
 
-type ServiceState struct {
-	Name      string
-	Namespace string
-	Endpoints []EndpointState
+type IngressState struct {
+	Name      string          `yaml:"name"`
+	Namespace string          `yaml:"endpoints"`
+	Endpoints []EndpointState `yaml:"endpoints"`
 }
 
 type ApplicationState struct {
-	Nodes []NodeState `yaml:"nodes"`
+	Nodes     []NodeState    `yaml:"nodes"`
+	Ingresses []IngressState `yaml:"ingresses"`
 }
 
 func discover(clientset *kubernetes.Clientset) {
@@ -57,14 +63,45 @@ func discover(clientset *kubernetes.Clientset) {
 		appState.Nodes = append(appState.Nodes, NodeState{Name: node.Name})
 	}
 
-	fmt.Printf("\nservices:\n")
-	for _, service := range services.Items {
-		fmt.Printf("%s.%s\n", service.Namespace, service.Name)
-	}
-
+	// Ingress points to a service, service points to Deployments/DaemonSets
 	fmt.Printf("\ningresses:\n")
 	for _, ingress := range ingresses.Items {
 		fmt.Printf("%s.%s\n", ingress.Namespace, ingress.Name)
+		endpoints := []EndpointState{}
+		for _, rule := range ingress.Spec.Rules {
+			host := getIngressHost(rule)
+			for _, path := range rule.HTTP.Paths {
+
+				serviceName := path.Backend.ServiceName
+				service, err := clientset.CoreV1().Services(ingress.Namespace).Get(serviceName, metav1.GetOptions{})
+				if err != nil {
+					log.Printf("Cannot get a service %s.\n", serviceName)
+					continue
+				}
+
+				uri := host + path.Path
+
+				resp, err := http.Get(uri)
+				if err != nil {
+					// Timeout, DNS doesn't resolve, wrong protocol etc
+					log.Printf("Cannot do http GET against %s.\n", uri)
+				} else {
+					statusCode := resp.StatusCode
+					contentType := resp.Header.Get("Content-Type")
+					endpoints = append(endpoints, EndpointState{Url: uri, Code: statusCode, ContentType: contentType, PodSelector: service.Spec.Selector})
+
+				}
+				defer resp.Body.Close()
+
+			}
+		}
+
+		appState.Ingresses = append(appState.Ingresses, IngressState{Name: ingress.Name, Namespace: ingress.Namespace, Endpoints: endpoints})
+	}
+
+	fmt.Printf("\nservices:\n")
+	for _, service := range services.Items {
+		fmt.Printf("%s.%s\n", service.Namespace, service.Name)
 	}
 
 	yml, err := yaml.Marshal(&appState)

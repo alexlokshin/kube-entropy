@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -20,6 +21,22 @@ func IsSuccessHTTPCode(validCodes []string, code string) (result bool) {
 	return false
 }
 
+func getIngressHost(rule v1beta1.IngressRule) (host string) {
+	host = ec.MonitoringSettings.IngressMonitoring.Protocol + "://" + ec.MonitoringSettings.IngressMonitoring.DefaultHost + ":" + ec.MonitoringSettings.IngressMonitoring.Port
+	if len(strings.TrimSpace(rule.Host)) > 0 {
+		protocol := "https"
+		if len(ec.MonitoringSettings.IngressMonitoring.Protocol) > 0 {
+			protocol = ec.MonitoringSettings.IngressMonitoring.Protocol
+		}
+		port := "443"
+		if len(ec.MonitoringSettings.IngressMonitoring.Port) > 0 {
+			port = ec.MonitoringSettings.IngressMonitoring.Port
+		}
+		host = protocol + "://" + strings.TrimSpace(rule.Host) + ":" + port
+	}
+	return host
+}
+
 func monitorIngresses(clientset *kubernetes.Clientset) {
 	listOptions := listSelectors(ec.MonitoringSettings.IngressMonitoring.Selector)
 	for true {
@@ -27,23 +44,10 @@ func monitorIngresses(clientset *kubernetes.Clientset) {
 		if err != nil {
 			log.Printf("ERROR: Cannot get a list of ingresses. Skipping for now. %v\n", err)
 		}
-		for i := 0; i < len(ingresses.Items); i++ {
-			ingress := ingresses.Items[i]
-
-			for _, element := range ingress.Spec.Rules {
-				host := ec.MonitoringSettings.IngressMonitoring.Protocol + "://" + ec.MonitoringSettings.IngressMonitoring.DefaultHost + ":" + ec.MonitoringSettings.IngressMonitoring.Port
-				if len(strings.TrimSpace(element.Host)) > 0 {
-					protocol := "https"
-					if len(ec.MonitoringSettings.IngressMonitoring.Protocol) > 0 {
-						protocol = ec.MonitoringSettings.IngressMonitoring.Protocol
-					}
-					port := "443"
-					if len(ec.MonitoringSettings.IngressMonitoring.Port) > 0 {
-						port = ec.MonitoringSettings.IngressMonitoring.Port
-					}
-					host = protocol + "://" + strings.TrimSpace(element.Host) + ":" + port
-				}
-				for _, path := range element.HTTP.Paths {
+		for _, ingress := range ingresses.Items {
+			for _, rule := range ingress.Spec.Rules {
+				host := getIngressHost(rule)
+				for _, path := range rule.HTTP.Paths {
 					uri := host + path.Path
 					go func() {
 						resp, err := http.Get(uri)
