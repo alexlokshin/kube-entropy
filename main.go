@@ -1,11 +1,13 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"math/rand"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,21 +85,25 @@ func homeDir() string {
 	return os.Getenv("USERPROFILE") // windows
 }
 
-func readConfig(configFileName string) {
+func readConfig(configFileName string) (ec entropyConfig, err error) {
 	configFileData, err := ioutil.ReadFile(configFileName)
 	if err != nil {
 		log.Printf("ERROR: Config file %s cannot be read. #%v\n", configFileName, err)
-		betterPanic("Shutting down.")
+		return entropyConfig{}, err
 	}
 
 	err = yaml.Unmarshal(configFileData, &ec)
 	if err != nil {
-		betterPanic(err.Error())
+		return entropyConfig{}, err
 	}
+	return ec, nil
 }
 
 func main() {
+	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+
 	configFileName := flag.String("config", "./config/config.yaml", "Configuration file for the kube-entropy.")
+	mode := flag.String("mode", "chaos", "Runtime mode: chaos (default), discovery")
 	flag.Parse()
 
 	var kubeconfig *string
@@ -120,12 +126,18 @@ func main() {
 	}
 	inCluster = false
 
-	readConfig(*configFileName)
+	ec, err = readConfig(*configFileName)
+	if err != nil {
+		betterPanic(err.Error())
+	}
+
 	if inCluster {
 		log.Printf("Configured to run in in-cluster mode.\n")
 	} else {
-		log.Printf("Configured to run in out-of cluster mode.\nService testing is not supported.")
+		log.Printf("Configured to run in out-of cluster mode.\nService testing other than NodePort is not supported.")
 	}
+
+	// TODO: Discovery mode
 
 	log.Printf("Starting kube-entropy.\n")
 	rand.Seed(time.Now().UnixNano())
@@ -134,32 +146,52 @@ func main() {
 	if err != nil {
 		betterPanic(err.Error())
 	} else {
-		log.Printf("Entropying it up.\n")
-		if ec.PodChaos.Enabled {
-			log.Printf("Launching the pod killer.\n")
-			go killPods(clientset)
-		}
-		if ec.NodeChaos.Enabled {
-			log.Printf("Launching the node killer.\n")
-			go killNodes(clientset)
+		nodes, err := clientset.CoreV1().Nodes().List(metav1.ListOptions{})
+		if err != nil {
+			betterPanic("ERROR: Unable to connect to the k8s cluster. " + err.Error())
+		} else {
+			log.Printf("Your cluster has a total of %d nodes.\n", len(nodes.Items))
 		}
 
-		if ec.MonitoringSettings.ServiceMonitoring.Selector.Enabled {
-			log.Printf("Launching the service monitor.\n")
-			log.Printf("Monitoring services every %s.\n", ec.MonitoringSettings.ServiceMonitoring.Selector.Interval)
+		if *mode == "chaos" {
+			log.Printf("Entropying it up.\n")
+			if ec.PodChaos.Enabled {
+				log.Printf("Launching the pod killer.\n")
+				go killPods(clientset)
+			}
+			if ec.NodeChaos.Enabled {
+				log.Printf("Launching the node killer.\n")
+				go killNodes(clientset)
+			}
 
-			go monitorServices(clientset)
+			if inCluster {
+				if ec.MonitoringSettings.ServiceMonitoring.Selector.Enabled {
+					log.Printf("Launching the service monitor.\n")
+					log.Printf("Monitoring services every %s.\n", ec.MonitoringSettings.ServiceMonitoring.Selector.Interval)
+
+					go monitorServices(clientset)
+				}
+			}
+
+			if ec.MonitoringSettings.IngressMonitoring.Selector.Enabled {
+				log.Printf("Launching the ingress monitor.\n")
+				log.Printf("Monitoring ingresses every %s.\n", ec.MonitoringSettings.IngressMonitoring.Selector.Interval)
+
+				go monitorIngresses(clientset)
+			}
+
+			for true {
+				time.Sleep(30 * time.Second)
+			}
 		}
 
-		if ec.MonitoringSettings.IngressMonitoring.Selector.Enabled {
-			log.Printf("Launching the ingress monitor.\n")
-			log.Printf("Monitoring ingresses every %s.\n", ec.MonitoringSettings.IngressMonitoring.Selector.Interval)
-
-			go monitorIngresses(clientset)
-		}
-
-		for true {
-			time.Sleep(30 * time.Second)
+		if *mode == "discovery" {
+			log.Printf("Discovering the current configuration.\n")
+			// Schedulable nodes
+			// Services -- discover protocol
+			// Ingresses -- look at the http response codes
+			// Record to a config file
+			discover(clientset)
 		}
 	}
 }

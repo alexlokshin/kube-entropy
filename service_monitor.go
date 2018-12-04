@@ -40,6 +40,7 @@ func monitorServices(clientset *kubernetes.Clientset) {
 
 				if len(uri) > 0 {
 					go func() {
+						// TCP dialer only knows of TCP and UDP
 						log.Printf("Connecting to %s\n", uri)
 						conn, err := net.Dial(strings.ToLower(string(element.Protocol)), uri)
 						if err != nil {
