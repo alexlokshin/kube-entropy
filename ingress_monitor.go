@@ -21,18 +21,29 @@ func IsSuccessHTTPCode(validCodes []string, code string) (result bool) {
 	return false
 }
 
-func getIngressHost(rule v1beta1.IngressRule) (host string) {
+func getIngressHost(ingress v1beta1.Ingress, rule v1beta1.IngressRule) (host string) {
 	host = ec.MonitoringSettings.IngressMonitoring.Protocol + "://" + ec.MonitoringSettings.IngressMonitoring.DefaultHost + ":" + ec.MonitoringSettings.IngressMonitoring.Port
 	if len(strings.TrimSpace(rule.Host)) > 0 {
-		protocol := "https"
-		if len(ec.MonitoringSettings.IngressMonitoring.Protocol) > 0 {
-			protocol = ec.MonitoringSettings.IngressMonitoring.Protocol
+		protocol := "http"
+		port := 80
+
+		if len(ingress.Spec.TLS) > 0 {
+
 		}
-		port := "443"
-		if len(ec.MonitoringSettings.IngressMonitoring.Port) > 0 {
-			port = ec.MonitoringSettings.IngressMonitoring.Port
+		for _, cert := range ingress.Spec.TLS {
+			for _, tlsHost := range cert.Hosts {
+				if strings.ToLower(tlsHost) == strings.ToLower(rule.Host) {
+					protocol = "https"
+					port = 443
+					break
+				}
+			}
+			if protocol == "https" {
+				break
+			}
 		}
-		host = protocol + "://" + strings.TrimSpace(rule.Host) + ":" + port
+
+		host = protocol + "://" + strings.TrimSpace(rule.Host) + ":" + strconv.Itoa(port)
 	}
 	return host
 }
@@ -46,7 +57,7 @@ func monitorIngresses(clientset *kubernetes.Clientset) {
 		}
 		for _, ingress := range ingresses.Items {
 			for _, rule := range ingress.Spec.Rules {
-				host := getIngressHost(rule)
+				host := getIngressHost(ingress, rule)
 				for _, path := range rule.HTTP.Paths {
 					uri := host + path.Path
 					go func() {

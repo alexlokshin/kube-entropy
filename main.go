@@ -126,7 +126,7 @@ func main() {
 	}
 	inCluster = false
 
-	_, err = readConfig(*configFileName)
+	ec, err = readConfig(*configFileName)
 	if err != nil {
 		betterPanic(err.Error())
 	}

@@ -45,14 +45,12 @@ func discover(clientset *kubernetes.Clientset) {
 		betterPanic(err.Error())
 	}
 
-	listOptions = listSelectors(ec.MonitoringSettings.ServiceMonitoring.Selector)
-	services, err := clientset.CoreV1().Services("").List(listOptions)
+	services, err := clientset.CoreV1().Services("").List(metav1.ListOptions{})
 	if err != nil {
 		betterPanic(err.Error())
 	}
 
-	listOptions = listSelectors(ec.MonitoringSettings.IngressMonitoring.Selector)
-	ingresses, err := clientset.Extensions().Ingresses("").List(listOptions)
+	ingresses, err := clientset.Extensions().Ingresses("").List(metav1.ListOptions{})
 	if err != nil {
 		betterPanic(err.Error())
 	}
@@ -71,7 +69,8 @@ func discover(clientset *kubernetes.Clientset) {
 		fmt.Printf("%s.%s\n", ingress.Namespace, ingress.Name)
 		endpoints := []EndpointState{}
 		for _, rule := range ingress.Spec.Rules {
-			host := getIngressHost(rule)
+
+			host := getIngressHost(ingress, rule)
 			for _, path := range rule.HTTP.Paths {
 
 				serviceName := path.Backend.ServiceName
