@@ -19,6 +19,7 @@ type NodeState struct {
 
 type EndpointState struct {
 	Url         string `yaml:"url"`
+	Method      string `yaml:"method"`
 	ContentType string `yaml:"contentType"`
 	Code        int    `yaml:"code"`
 	PodSelector map[string]string
@@ -26,7 +27,7 @@ type EndpointState struct {
 
 type IngressState struct {
 	Name      string          `yaml:"name"`
-	Namespace string          `yaml:"endpoints"`
+	Namespace string          `yaml:"namespace"`
 	Endpoints []EndpointState `yaml:"endpoints"`
 }
 
@@ -36,6 +37,7 @@ type ApplicationState struct {
 }
 
 func discover(clientset *kubernetes.Clientset) {
+
 	fmt.Printf("Saving everything.\n")
 	listOptions := listSelectors(ec.NodeChaos)
 	nodes, err := clientset.CoreV1().Nodes().List(listOptions)
@@ -88,10 +90,9 @@ func discover(clientset *kubernetes.Clientset) {
 				} else {
 					statusCode := resp.StatusCode
 					contentType := resp.Header.Get("Content-Type")
-					endpoints = append(endpoints, EndpointState{Url: uri, Code: statusCode, ContentType: contentType, PodSelector: service.Spec.Selector})
-
+					endpoints = append(endpoints, EndpointState{Url: uri, Method: "GET", Code: statusCode, ContentType: contentType, PodSelector: service.Spec.Selector})
+					defer resp.Body.Close()
 				}
-				defer resp.Body.Close()
 
 			}
 		}

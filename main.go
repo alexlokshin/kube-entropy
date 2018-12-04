@@ -1,11 +1,13 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"math/rand"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,6 +100,8 @@ func readConfig(configFileName string) (ec entropyConfig, err error) {
 }
 
 func main() {
+	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+
 	configFileName := flag.String("config", "./config/config.yaml", "Configuration file for the kube-entropy.")
 	mode := flag.String("mode", "chaos", "Runtime mode: chaos (default), discovery")
 	flag.Parse()
