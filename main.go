@@ -51,7 +51,13 @@ type entropyConfig struct {
 	MonitoringSettings monitoringSettings `yaml:"monitoring"`
 }
 
+type discoveryConfig struct {
+	Nodes   entropySelector         `yaml:"nodes"`
+	Ingress ingressMonitoringConfig `yaml:"ingresses"`
+}
+
 var ec entropyConfig
+var dc discoveryConfig
 var inCluster bool
 
 func combine(parts []string, separator string) (result string) {
@@ -99,10 +105,26 @@ func readConfig(configFileName string) (ec entropyConfig, err error) {
 	return ec, nil
 }
 
+func readDiscoveryConfig(configFileName string) (dc discoveryConfig, err error) {
+	configFileData, err := ioutil.ReadFile(configFileName)
+	if err != nil {
+		log.Printf("ERROR: Config file %s cannot be read. #%v\n", configFileName, err)
+		return discoveryConfig{}, err
+	}
+
+	err = yaml.Unmarshal(configFileData, &dc)
+	if err != nil {
+		return discoveryConfig{}, err
+	}
+	return dc, nil
+}
+
 func main() {
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 
 	configFileName := flag.String("config", "./config/config.yaml", "Configuration file for the kube-entropy.")
+	discoveryConfigFileName := flag.String("dc", "./config/discovery.yaml", "Discovery file for the kube-entropy.")
+
 	mode := flag.String("mode", "chaos", "Runtime mode: chaos (default), discovery")
 	flag.Parse()
 
@@ -127,6 +149,11 @@ func main() {
 	inCluster = false
 
 	ec, err = readConfig(*configFileName)
+	if err != nil {
+		betterPanic(err.Error())
+	}
+
+	dc, err = readDiscoveryConfig(*discoveryConfigFileName)
 	if err != nil {
 		betterPanic(err.Error())
 	}
@@ -191,7 +218,7 @@ func main() {
 			// Services -- discover protocol
 			// Ingresses -- look at the http response codes
 			// Record to a config file
-			discover(clientset)
+			discover(dc, clientset)
 		}
 	}
 }

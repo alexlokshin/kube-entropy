@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"io/ioutil"
 
@@ -31,14 +32,26 @@ type IngressState struct {
 	Endpoints []EndpointState `yaml:"endpoints"`
 }
 
-type ApplicationState struct {
-	Nodes     []NodeState    `yaml:"nodes"`
-	Ingresses []IngressState `yaml:"ingresses"`
+type NodeConfiguration struct {
+	Items    []string      `yaml:"items"`
+	Enabled  bool          `yaml:"enabled"`
+	Interval time.Duration `yaml:"interval"`
 }
 
-func discover(clientset *kubernetes.Clientset) {
+type IngressConfiguration struct {
+	Items    []IngressState `yaml:"ingresses"`
+	Enabled  bool           `yaml:"enabled"`
+	Interval time.Duration  `yaml:"interval"`
+}
 
-	fmt.Printf("Saving everything.\n")
+type ApplicationState struct {
+	Nodes     NodeConfiguration    `yaml:"nodes"`
+	Ingresses IngressConfiguration `yaml:"ingresses"`
+}
+
+func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
+
+	fmt.Printf("Creating a test plan.\n")
 	listOptions := listSelectors(ec.NodeChaos)
 	nodes, err := clientset.CoreV1().Nodes().List(listOptions)
 	if err != nil {
@@ -60,8 +73,10 @@ func discover(clientset *kubernetes.Clientset) {
 	fmt.Printf("\nnodes:\n")
 	for _, node := range nodes.Items {
 		fmt.Printf("%s\n", node.Name)
-		appState.Nodes = append(appState.Nodes, NodeState{Name: node.Name})
+		appState.Nodes.Items = append(appState.Nodes.Items, node.Name)
 	}
+	appState.Nodes.Enabled = dc.Nodes.Enabled
+	appState.Nodes.Interval = dc.Nodes.Interval
 
 	// Ingress points to a service, service points to Deployments/DaemonSets
 	fmt.Printf("\ningresses:\n")
@@ -96,8 +111,10 @@ func discover(clientset *kubernetes.Clientset) {
 			}
 		}
 
-		appState.Ingresses = append(appState.Ingresses, IngressState{Name: ingress.Name, Namespace: ingress.Namespace, Endpoints: endpoints})
+		appState.Ingresses.Items = append(appState.Ingresses.Items, IngressState{Name: ingress.Name, Namespace: ingress.Namespace, Endpoints: endpoints})
 	}
+	appState.Ingresses.Enabled = dc.Ingress.Selector.Enabled
+	appState.Ingresses.Interval = dc.Ingress.Selector.Interval
 
 	fmt.Printf("\nservices:\n")
 	for _, service := range services.Items {
@@ -111,6 +128,6 @@ func discover(clientset *kubernetes.Clientset) {
 		betterPanic("Cannot save appstate.yml.")
 		return
 	}
-	fmt.Printf("Saved everything.\n")
+	fmt.Printf("Test plan saved as appstate.yml.\n")
 
 }
