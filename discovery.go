@@ -14,15 +14,11 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-type NodeState struct {
-	Name string `yaml:"name"`
-}
-
 type EndpointState struct {
-	Url         string `yaml:"url"`
-	Method      string `yaml:"method"`
-	ContentType string `yaml:"contentType"`
-	Code        int    `yaml:"code"`
+	URL         string            `yaml:"url"`
+	Method      string            `yaml:"method"`
+	Headers     map[string]string `yaml:"headers"`
+	Code        int               `yaml:"code"`
 	PodSelector map[string]string
 }
 
@@ -33,15 +29,16 @@ type IngressState struct {
 }
 
 type NodeConfiguration struct {
-	Items    []string      `yaml:"items"`
 	Enabled  bool          `yaml:"enabled"`
 	Interval time.Duration `yaml:"interval"`
+	Items    []string      `yaml:"items"`
 }
 
 type IngressConfiguration struct {
-	Items    []IngressState `yaml:"ingresses"`
-	Enabled  bool           `yaml:"enabled"`
-	Interval time.Duration  `yaml:"interval"`
+	Enabled          bool           `yaml:"enabled"`
+	Interval         time.Duration  `yaml:"interval"`
+	SuccessHTTPCodes []string       `yaml:"successHttpCodes"`
+	Items            []IngressState `yaml:"ingresses"`
 }
 
 type ApplicationState struct {
@@ -68,15 +65,20 @@ func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
 		betterPanic(err.Error())
 	}
 
-	appState := ApplicationState{}
+	appState := ApplicationState{
+		Nodes: NodeConfiguration{
+			Enabled:  dc.Nodes.Enabled,
+			Interval: dc.Nodes.Interval},
+		Ingresses: IngressConfiguration{
+			Enabled:          dc.Ingress.Selector.Enabled,
+			Interval:         dc.Ingress.Selector.Interval,
+			SuccessHTTPCodes: dc.Ingress.SuccessHTTPCodes}}
 
 	fmt.Printf("\nnodes:\n")
 	for _, node := range nodes.Items {
 		fmt.Printf("%s\n", node.Name)
 		appState.Nodes.Items = append(appState.Nodes.Items, node.Name)
 	}
-	appState.Nodes.Enabled = dc.Nodes.Enabled
-	appState.Nodes.Interval = dc.Nodes.Interval
 
 	// Ingress points to a service, service points to Deployments/DaemonSets
 	fmt.Printf("\ningresses:\n")
@@ -103,8 +105,14 @@ func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
 					log.Printf("Cannot do http GET against %s.\n", uri)
 				} else {
 					statusCode := resp.StatusCode
-					contentType := resp.Header.Get("Content-Type")
-					endpoints = append(endpoints, EndpointState{Url: uri, Method: "GET", Code: statusCode, ContentType: contentType, PodSelector: service.Spec.Selector})
+					var headers = map[string]string{}
+					for key := range resp.Header {
+						if key != "Date" && key != "Content-Length" && key != "Set-Cookie" {
+							headers[key] = resp.Header.Get(key)
+						}
+					}
+
+					endpoints = append(endpoints, EndpointState{URL: uri, Method: "GET", Code: statusCode, Headers: headers, PodSelector: service.Spec.Selector})
 					defer resp.Body.Close()
 				}
 
@@ -113,8 +121,6 @@ func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
 
 		appState.Ingresses.Items = append(appState.Ingresses.Items, IngressState{Name: ingress.Name, Namespace: ingress.Namespace, Endpoints: endpoints})
 	}
-	appState.Ingresses.Enabled = dc.Ingress.Selector.Enabled
-	appState.Ingresses.Interval = dc.Ingress.Selector.Interval
 
 	fmt.Printf("\nservices:\n")
 	for _, service := range services.Items {
@@ -123,11 +129,11 @@ func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
 
 	yml, err := yaml.Marshal(&appState)
 
-	err = ioutil.WriteFile("./appstate.yml", yml, os.ModePerm)
+	err = ioutil.WriteFile("./testplan.yml", yml, os.ModePerm)
 	if err != nil {
-		betterPanic("Cannot save appstate.yml.")
+		betterPanic("Cannot save testplan.yml.")
 		return
 	}
-	fmt.Printf("Test plan saved as appstate.yml.\n")
+	fmt.Printf("Test plan saved as testplan.yml.\n")
 
 }

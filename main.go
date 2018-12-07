@@ -210,15 +210,15 @@ func main() {
 			for true {
 				time.Sleep(30 * time.Second)
 			}
-		}
-
-		if *mode == "discovery" {
+		} else if *mode == "discovery" {
 			log.Printf("Discovering the current configuration.\n")
 			// Schedulable nodes
 			// Services -- discover protocol
 			// Ingresses -- look at the http response codes
 			// Record to a config file
 			discover(dc, clientset)
+		} else {
+			betterPanic("Runtime mode not specified.")
 		}
 	}
 }
