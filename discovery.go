@@ -49,7 +49,7 @@ type ApplicationState struct {
 func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
 
 	fmt.Printf("Creating a test plan.\n")
-	listOptions := listSelectors(ec.NodeChaos)
+	listOptions := listSelectors(dc.Nodes)
 	nodes, err := clientset.CoreV1().Nodes().List(listOptions)
 	if err != nil {
 		betterPanic(err.Error())
@@ -87,7 +87,7 @@ func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
 		endpoints := []EndpointState{}
 		for _, rule := range ingress.Spec.Rules {
 
-			host := getIngressHost(ingress, rule)
+			host := getIngressHost(dc, ingress, rule)
 			for _, path := range rule.HTTP.Paths {
 
 				serviceName := path.Backend.ServiceName

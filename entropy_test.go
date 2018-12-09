@@ -23,10 +23,8 @@ func Test_ValidateHttpCodes(t *testing.T) {
 }
 
 func Test_loadConfig(t *testing.T) {
-	ec, err := readConfig("./config/config.yaml")
+	dc, err := readDiscoveryConfig("./config/discovery.yaml")
 	assert.Equal(t, true, err == nil)
-	assert.Equal(t, true, ec.MonitoringSettings.IngressMonitoring.Port == "443")
-	assert.Equal(t, true, ec.MonitoringSettings.IngressMonitoring.Protocol == "https")
-	assert.Equal(t, true, len(ec.NodeChaos.Fields) > 0)
-	assert.Equal(t, true, len(ec.PodChaos.Fields) > 0)
+	assert.Equal(t, true, dc.Nodes.Enabled)
+	assert.Equal(t, true, dc.Ingress.Protocol == "https")
 }

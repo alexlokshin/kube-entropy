@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	yaml "gopkg.in/yaml.v2"
@@ -20,64 +19,10 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-type entropySelector struct {
-	Fields   []string      `yaml:"fields"`
-	Labels   []string      `yaml:"labels"`
-	Enabled  bool          `yaml:"enabled"`
-	Interval time.Duration `yaml:"interval"`
-}
+//var ec entropyConfig
 
-type ingressMonitoringConfig struct {
-	Selector         entropySelector `yaml:"selector"`
-	DefaultHost      string          `yaml:"defaultHost"`
-	Protocol         string          `yaml:"protocol"`
-	Port             string          `yaml:"port"`
-	SuccessHTTPCodes []string        `yaml:"successHttpCodes"`
-}
-
-type serviceMonitoringConfig struct {
-	Selector     entropySelector `yaml:"selector"`
-	NodePortHost string          `yaml:"nodePortHost"`
-}
-
-type monitoringSettings struct {
-	ServiceMonitoring serviceMonitoringConfig `yaml:"serviceMonitoring"`
-	IngressMonitoring ingressMonitoringConfig `yaml:"ingressMonitoring"`
-}
-
-type entropyConfig struct {
-	NodeChaos          entropySelector    `yaml:"nodeChaos"`
-	PodChaos           entropySelector    `yaml:"podChaos"`
-	MonitoringSettings monitoringSettings `yaml:"monitoring"`
-}
-
-type discoveryConfig struct {
-	Nodes   entropySelector         `yaml:"nodes"`
-	Ingress ingressMonitoringConfig `yaml:"ingresses"`
-}
-
-var ec entropyConfig
 var dc discoveryConfig
 var inCluster bool
-
-func combine(parts []string, separator string) (result string) {
-	var buffer strings.Builder
-	for _, element := range parts {
-		if buffer.Len() > 0 {
-			buffer.WriteString(separator)
-		}
-		buffer.WriteString(element)
-	}
-	result = buffer.String()
-	return
-}
-
-func listSelectors(selectors entropySelector) (listOptions metav1.ListOptions) {
-	listOptions = metav1.ListOptions{}
-	listOptions.FieldSelector = combine(selectors.Fields, ",")
-	listOptions.LabelSelector = combine(selectors.Labels, ",")
-	return
-}
 
 func betterPanic(message string) {
 	fmt.Printf("%s\n\n", message)
@@ -91,18 +36,18 @@ func homeDir() string {
 	return os.Getenv("USERPROFILE") // windows
 }
 
-func readConfig(configFileName string) (ec entropyConfig, err error) {
+func readTestPlan(configFileName string) (testPlan ApplicationState, err error) {
 	configFileData, err := ioutil.ReadFile(configFileName)
 	if err != nil {
 		log.Printf("ERROR: Config file %s cannot be read. #%v\n", configFileName, err)
-		return entropyConfig{}, err
+		return ApplicationState{}, err
 	}
 
-	err = yaml.Unmarshal(configFileData, &ec)
+	err = yaml.Unmarshal(configFileData, &testPlan)
 	if err != nil {
-		return entropyConfig{}, err
+		return ApplicationState{}, err
 	}
-	return ec, nil
+	return testPlan, nil
 }
 
 func readDiscoveryConfig(configFileName string) (dc discoveryConfig, err error) {
@@ -148,12 +93,7 @@ func main() {
 	}
 	inCluster = false
 
-	ec, err = readConfig(*configFileName)
-	if err != nil {
-		betterPanic(err.Error())
-	}
-
-	dc, err = readDiscoveryConfig(*discoveryConfigFileName)
+	testPlan, err := readTestPlan(*configFileName)
 	if err != nil {
 		betterPanic(err.Error())
 	}
@@ -182,29 +122,29 @@ func main() {
 
 		if *mode == "chaos" {
 			log.Printf("Entropying it up.\n")
-			if ec.PodChaos.Enabled {
+			if testPlan.Ingresses.Enabled {
 				log.Printf("Launching the pod killer.\n")
-				go killPods(clientset)
+				go killPods(testPlan, clientset)
 			}
-			if ec.NodeChaos.Enabled {
+			if testPlan.Nodes.Enabled {
 				log.Printf("Launching the node killer.\n")
-				go killNodes(clientset)
+				go killNodes(testPlan, clientset)
 			}
 
-			if inCluster {
+			/*if inCluster {
 				if ec.MonitoringSettings.ServiceMonitoring.Selector.Enabled {
 					log.Printf("Launching the service monitor.\n")
 					log.Printf("Monitoring services every %s.\n", ec.MonitoringSettings.ServiceMonitoring.Selector.Interval)
 
 					go monitorServices(clientset)
 				}
-			}
+			}*/
 
-			if ec.MonitoringSettings.IngressMonitoring.Selector.Enabled {
+			if testPlan.Ingresses.Enabled {
 				log.Printf("Launching the ingress monitor.\n")
-				log.Printf("Monitoring ingresses every %s.\n", ec.MonitoringSettings.IngressMonitoring.Selector.Interval)
+				log.Printf("Monitoring ingresses every %s.\n", testPlan.Ingresses.Interval)
 
-				go monitorIngresses(clientset)
+				go monitorIngresses(testPlan, clientset)
 			}
 
 			for true {
@@ -212,6 +152,12 @@ func main() {
 			}
 		} else if *mode == "discovery" {
 			log.Printf("Discovering the current configuration.\n")
+
+			dc, err = readDiscoveryConfig(*discoveryConfigFileName)
+			if err != nil {
+				betterPanic(err.Error())
+			}
+
 			// Schedulable nodes
 			// Services -- discover protocol
 			// Ingresses -- look at the http response codes
