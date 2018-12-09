@@ -129,11 +129,13 @@ func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
 
 	yml, err := yaml.Marshal(&appState)
 
-	err = ioutil.WriteFile("./testplan.yml", yml, os.ModePerm)
+	testPlanFileName := "./testplan.yaml"
+
+	err = ioutil.WriteFile(testPlanFileName, yml, os.ModePerm)
 	if err != nil {
-		betterPanic("Cannot save testplan.yml.")
+		betterPanic("Cannot save %s.", testPlanFileName)
 		return
 	}
-	fmt.Printf("Test plan saved as testplan.yml.\n")
+	fmt.Printf("Test plan saved as %s.\n", testPlanFileName)
 
 }

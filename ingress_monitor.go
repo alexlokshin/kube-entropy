@@ -23,7 +23,7 @@ func IsSuccessHTTPCode(validCodes []string, code string) (result bool) {
 	return false
 }
 
-func IsMatchingResponse(endpoint EndpointState, resp *http.Response) (result bool, err error) {
+func isMatchingResponse(endpoint EndpointState, resp *http.Response) (result bool, err error) {
 	if resp == nil {
 		return false, errors.New("No http response available")
 	}
@@ -73,18 +73,18 @@ func monitorIngresses(testPlan ApplicationState, clientset *kubernetes.Clientset
 		ingresses := testPlan.Ingresses.Items
 		for _, ingress := range ingresses {
 			for _, endpoint := range ingress.Endpoints {
-				go func() {
-					resp, err := http.Get(endpoint.URL)
+				go func(ep EndpointState) {
+					resp, err := http.Get(ep.URL)
 					if err != nil {
 						// Timeout, DNS doesn't resolve, wrong protocol etc
-						log.Printf("Cannot do http GET against %s.\n", endpoint.URL)
+						log.Printf("Cannot do http GET against %s.\n", ep.URL)
 					} else {
-						if match, err := IsMatchingResponse(endpoint, resp); !match {
-							log.Printf("Unexpected response when calling %s: %v.\n", endpoint.URL, err)
+						if match, err := isMatchingResponse(ep, resp); !match {
+							log.Printf("Unexpected response when calling %s: %v.\n", ep.URL, err)
 						}
 					}
 					defer resp.Body.Close()
-				}()
+				}(endpoint)
 			}
 		}
 		time.Sleep(testPlan.Ingresses.Interval)

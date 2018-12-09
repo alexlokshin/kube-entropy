@@ -24,8 +24,9 @@ import (
 var dc discoveryConfig
 var inCluster bool
 
-func betterPanic(message string) {
-	fmt.Printf("%s\n\n", message)
+func betterPanic(message string, args ...string) {
+	temp := fmt.Sprintf(message, args)
+	fmt.Printf("%s\n\n", temp)
 	os.Exit(1)
 }
 
@@ -67,8 +68,8 @@ func readDiscoveryConfig(configFileName string) (dc discoveryConfig, err error) 
 func main() {
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 
-	configFileName := flag.String("config", "./config/config.yaml", "Configuration file for the kube-entropy.")
-	discoveryConfigFileName := flag.String("dc", "./config/discovery.yaml", "Discovery file for the kube-entropy.")
+	testPlanFileName := flag.String("config", "./testplan.yaml", "Test plan file")
+	discoveryConfigFileName := flag.String("dc", "./config/discovery.yaml", "Discovery file for the kube-entropy")
 
 	mode := flag.String("mode", "chaos", "Runtime mode: chaos (default), discovery")
 	flag.Parse()
@@ -93,11 +94,6 @@ func main() {
 	}
 	inCluster = false
 
-	testPlan, err := readTestPlan(*configFileName)
-	if err != nil {
-		betterPanic(err.Error())
-	}
-
 	if inCluster {
 		log.Printf("Configured to run in in-cluster mode.\n")
 	} else {
@@ -121,6 +117,11 @@ func main() {
 		}
 
 		if *mode == "chaos" {
+			testPlan, err := readTestPlan(*testPlanFileName)
+			if err != nil {
+				betterPanic(err.Error())
+			}
+
 			log.Printf("Entropying it up.\n")
 			if testPlan.Ingresses.Enabled {
 				log.Printf("Launching the pod killer.\n")
