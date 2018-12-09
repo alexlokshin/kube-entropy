@@ -9,9 +9,12 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-func killPods(clientset *kubernetes.Clientset) {
-	listOptions := listSelectors(ec.PodChaos)
+func killPods(testPlan ApplicationState, clientset *kubernetes.Clientset) {
+
 	for true {
+		ingress := testPlan.Ingresses.Items[rand.Intn(len(testPlan.Ingresses.Items))]
+		endpoint := ingress.Endpoints[rand.Intn(len(ingress.Endpoints))]
+		listOptions := labelSelectors(endpoint.PodSelector)
 		pods, err := clientset.CoreV1().Pods("").List(listOptions)
 		if err != nil {
 			log.Printf("ERROR: Cannot get a list of running pods. Skipping for now. %v\n", err)
@@ -28,7 +31,7 @@ func killPods(clientset *kubernetes.Clientset) {
 			}
 		}
 
-		duration := time.Duration(rand.Int63n(ec.PodChaos.Interval.Nanoseconds())) * time.Nanosecond
+		duration := time.Duration(rand.Int63n(testPlan.Ingresses.Interval.Nanoseconds())) * time.Nanosecond
 		log.Printf("For next pod deletion sleeping for %s\n", duration)
 		time.Sleep(duration)
 	}

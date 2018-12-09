@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"io/ioutil"
 
@@ -13,15 +14,11 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-type NodeState struct {
-	Name string `yaml:"name"`
-}
-
 type EndpointState struct {
-	Url         string `yaml:"url"`
-	Method      string `yaml:"method"`
-	ContentType string `yaml:"contentType"`
-	Code        int    `yaml:"code"`
+	URL         string            `yaml:"url"`
+	Method      string            `yaml:"method"`
+	Headers     map[string]string `yaml:"headers"`
+	Code        int               `yaml:"code"`
 	PodSelector map[string]string
 }
 
@@ -31,15 +28,28 @@ type IngressState struct {
 	Endpoints []EndpointState `yaml:"endpoints"`
 }
 
-type ApplicationState struct {
-	Nodes     []NodeState    `yaml:"nodes"`
-	Ingresses []IngressState `yaml:"ingresses"`
+type NodeConfiguration struct {
+	Enabled  bool          `yaml:"enabled"`
+	Interval time.Duration `yaml:"interval"`
+	Items    []string      `yaml:"items"`
 }
 
-func discover(clientset *kubernetes.Clientset) {
+type IngressConfiguration struct {
+	Enabled          bool           `yaml:"enabled"`
+	Interval         time.Duration  `yaml:"interval"`
+	SuccessHTTPCodes []string       `yaml:"successHttpCodes"`
+	Items            []IngressState `yaml:"ingresses"`
+}
 
-	fmt.Printf("Saving everything.\n")
-	listOptions := listSelectors(ec.NodeChaos)
+type ApplicationState struct {
+	Nodes     NodeConfiguration    `yaml:"nodes"`
+	Ingresses IngressConfiguration `yaml:"ingresses"`
+}
+
+func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
+
+	fmt.Printf("Creating a test plan.\n")
+	listOptions := listSelectors(dc.Nodes)
 	nodes, err := clientset.CoreV1().Nodes().List(listOptions)
 	if err != nil {
 		betterPanic(err.Error())
@@ -55,12 +65,19 @@ func discover(clientset *kubernetes.Clientset) {
 		betterPanic(err.Error())
 	}
 
-	appState := ApplicationState{}
+	appState := ApplicationState{
+		Nodes: NodeConfiguration{
+			Enabled:  dc.Nodes.Enabled,
+			Interval: dc.Nodes.Interval},
+		Ingresses: IngressConfiguration{
+			Enabled:          dc.Ingress.Selector.Enabled,
+			Interval:         dc.Ingress.Selector.Interval,
+			SuccessHTTPCodes: dc.Ingress.SuccessHTTPCodes}}
 
 	fmt.Printf("\nnodes:\n")
 	for _, node := range nodes.Items {
 		fmt.Printf("%s\n", node.Name)
-		appState.Nodes = append(appState.Nodes, NodeState{Name: node.Name})
+		appState.Nodes.Items = append(appState.Nodes.Items, node.Name)
 	}
 
 	// Ingress points to a service, service points to Deployments/DaemonSets
@@ -70,7 +87,7 @@ func discover(clientset *kubernetes.Clientset) {
 		endpoints := []EndpointState{}
 		for _, rule := range ingress.Spec.Rules {
 
-			host := getIngressHost(ingress, rule)
+			host := getIngressHost(dc, ingress, rule)
 			for _, path := range rule.HTTP.Paths {
 
 				serviceName := path.Backend.ServiceName
@@ -88,15 +105,21 @@ func discover(clientset *kubernetes.Clientset) {
 					log.Printf("Cannot do http GET against %s.\n", uri)
 				} else {
 					statusCode := resp.StatusCode
-					contentType := resp.Header.Get("Content-Type")
-					endpoints = append(endpoints, EndpointState{Url: uri, Method: "GET", Code: statusCode, ContentType: contentType, PodSelector: service.Spec.Selector})
+					var headers = map[string]string{}
+					for key := range resp.Header {
+						if key != "Date" && key != "Content-Length" && key != "Set-Cookie" {
+							headers[key] = resp.Header.Get(key)
+						}
+					}
+
+					endpoints = append(endpoints, EndpointState{URL: uri, Method: "GET", Code: statusCode, Headers: headers, PodSelector: service.Spec.Selector})
 					defer resp.Body.Close()
 				}
 
 			}
 		}
 
-		appState.Ingresses = append(appState.Ingresses, IngressState{Name: ingress.Name, Namespace: ingress.Namespace, Endpoints: endpoints})
+		appState.Ingresses.Items = append(appState.Ingresses.Items, IngressState{Name: ingress.Name, Namespace: ingress.Namespace, Endpoints: endpoints})
 	}
 
 	fmt.Printf("\nservices:\n")
@@ -106,11 +129,13 @@ func discover(clientset *kubernetes.Clientset) {
 
 	yml, err := yaml.Marshal(&appState)
 
-	err = ioutil.WriteFile("./appstate.yml", yml, os.ModePerm)
+	testPlanFileName := "./testplan.yaml"
+
+	err = ioutil.WriteFile(testPlanFileName, yml, os.ModePerm)
 	if err != nil {
-		betterPanic("Cannot save appstate.yml.")
+		betterPanic("Cannot save %s.", testPlanFileName)
 		return
 	}
-	fmt.Printf("Saved everything.\n")
+	fmt.Printf("Test plan saved as %s.\n", testPlanFileName)
 
 }

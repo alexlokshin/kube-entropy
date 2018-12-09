@@ -9,13 +9,13 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-func killNodes(clientset *kubernetes.Clientset) {
+func killNodes(testPlan ApplicationState, clientset *kubernetes.Clientset) {
 
 	nodes := &v1.NodeList{}
 	var err error
 	// Attempt to get a list of all scheduleable nodes
 	for true {
-		listOptions := listSelectors(ec.NodeChaos)
+		listOptions := namedNodeSelectors(testPlan.Nodes.Items)
 		nodes, err = clientset.CoreV1().Nodes().List(listOptions)
 		if err != nil {
 			log.Printf("ERROR: Cannot get a list of nodes. Skipping for now: %v\n", err)
@@ -61,7 +61,7 @@ func killNodes(clientset *kubernetes.Clientset) {
 			}
 		}
 
-		duration := time.Duration(rand.Int63n(ec.NodeChaos.Interval.Nanoseconds())) * time.Nanosecond
+		duration := time.Duration(rand.Int63n(testPlan.Nodes.Interval.Nanoseconds())) * time.Nanosecond
 		log.Printf("For next node cordon sleeping for %s\n", duration)
 		time.Sleep(duration)
 	}

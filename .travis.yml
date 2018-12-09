@@ -17,6 +17,7 @@ install:
 
 script:
   - env GOOS=linux GOARCH=arm go build
+  - go test
   - export COMMIT_TAG="${TRAVIS_BRANCH}_${TRAVIS_BUILD_NUMBER}_${TRAVIS_COMMIT}"
   - docker build . -t kube-entropy:"${COMMIT_TAG}"
 

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -21,8 +23,26 @@ func IsSuccessHTTPCode(validCodes []string, code string) (result bool) {
 	return false
 }
 
-func getIngressHost(ingress v1beta1.Ingress, rule v1beta1.IngressRule) (host string) {
-	host = ec.MonitoringSettings.IngressMonitoring.Protocol + "://" + ec.MonitoringSettings.IngressMonitoring.DefaultHost + ":" + ec.MonitoringSettings.IngressMonitoring.Port
+func isMatchingResponse(endpoint EndpointState, resp *http.Response) (result bool, err error) {
+	if resp == nil {
+		return false, errors.New("No http response available")
+	}
+	result = true
+	if endpoint.Code != resp.StatusCode {
+		return false, fmt.Errorf("Status code doesn't match. Expected: %d, Actual: %d", endpoint.Code, resp.StatusCode)
+	}
+
+	for headerName, headerValue := range endpoint.Headers {
+		if strings.Compare(headerValue, resp.Header.Get(headerName)) != 0 {
+			return false, fmt.Errorf("Header values don't match. Expected: %s, Actual: %s", headerValue, resp.Header.Get(headerName))
+		}
+	}
+
+	return result, nil
+}
+
+func getIngressHost(dc discoveryConfig, ingress v1beta1.Ingress, rule v1beta1.IngressRule) (host string) {
+	host = dc.Ingress.Protocol + "://" + dc.Ingress.DefaultHost + ":" + dc.Ingress.Port
 	if len(strings.TrimSpace(rule.Host)) > 0 {
 		protocol := "http"
 		port := 80
@@ -48,33 +68,25 @@ func getIngressHost(ingress v1beta1.Ingress, rule v1beta1.IngressRule) (host str
 	return host
 }
 
-func monitorIngresses(clientset *kubernetes.Clientset) {
-	listOptions := listSelectors(ec.MonitoringSettings.IngressMonitoring.Selector)
+func monitorIngresses(testPlan ApplicationState, clientset *kubernetes.Clientset) {
 	for true {
-		ingresses, err := clientset.Extensions().Ingresses("").List(listOptions)
-		if err != nil {
-			log.Printf("ERROR: Cannot get a list of ingresses. Skipping for now. %v\n", err)
-		}
-		for _, ingress := range ingresses.Items {
-			for _, rule := range ingress.Spec.Rules {
-				host := getIngressHost(ingress, rule)
-				for _, path := range rule.HTTP.Paths {
-					uri := host + path.Path
-					go func() {
-						resp, err := http.Get(uri)
-						if err != nil {
-							// Timeout, DNS doesn't resolve, wrong protocol etc
-							log.Printf("Cannot do http GET against %s.\n", uri)
-						} else {
-							if !IsSuccessHTTPCode(ec.MonitoringSettings.IngressMonitoring.SuccessHTTPCodes, strconv.Itoa(resp.StatusCode)) {
-								log.Printf("Unexpected http code %d when calling %s.\n", resp.StatusCode, uri)
-							}
+		ingresses := testPlan.Ingresses.Items
+		for _, ingress := range ingresses {
+			for _, endpoint := range ingress.Endpoints {
+				go func(ep EndpointState) {
+					resp, err := http.Get(ep.URL)
+					if err != nil {
+						// Timeout, DNS doesn't resolve, wrong protocol etc
+						log.Printf("Cannot do http GET against %s.\n", ep.URL)
+					} else {
+						if match, err := isMatchingResponse(ep, resp); !match {
+							log.Printf("Unexpected response when calling %s: %v.\n", ep.URL, err)
 						}
-						defer resp.Body.Close()
-					}()
-				}
+					}
+					defer resp.Body.Close()
+				}(endpoint)
 			}
 		}
-		time.Sleep(ec.MonitoringSettings.ServiceMonitoring.Selector.Interval)
+		time.Sleep(testPlan.Ingresses.Interval)
 	}
 }

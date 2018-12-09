@@ -1,0 +1,24 @@
+---
+nodes:
+  enabled: true
+  fields:
+    - spec.unschedulable!=true
+  labels:
+  interval: 5m
+ingresses:
+  protocol: https
+  port: 443
+  defaultHost: www.avsatum.com
+  selector:
+    enabled: true
+    interval: 2s
+    fields:
+      - metadata.namespace=default
+      - metadata.namespace!=kube-system
+      - metadata.namespace!=docker
+    labels:
+  successHttpCodes:
+    - 2xx
+    - 30x
+    - 403
+

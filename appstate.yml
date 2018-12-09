@@ -1,0 +1,45 @@
+nodes:
+  items:
+  - avsatumk8s.1
+  enabled: true
+  interval: 5m0s
+ingresses:
+  ingresses:
+  - name: efk-kibana
+    namespace: efk
+    endpoints:
+    - url: http://efk-kibana.efk.192.168.88.210.xip.io:80/efk
+      method: GET
+      contentType: application/json; charset=utf-8
+      code: 404
+      podselector:
+        app: kibana
+        release: efk
+  - name: grafana
+    namespace: grafana
+    endpoints:
+    - url: http://grafana.grafana.192.168.88.210.xip.io:80/grafana1
+      method: GET
+      contentType: text/html
+      code: 503
+      podselector:
+        app: grafana
+        release: grafana
+    - url: http://grafana.grafana.192.168.88.210.xip.io:80/grafana
+      method: GET
+      contentType: text/html
+      code: 502
+      podselector:
+        workloadID_ingress-57f7095cca5692274dfc251822d8bd49: "true"
+  - name: kafka-kafka-topics-ui
+    namespace: kafka
+    endpoints:
+    - url: https://kafka-kafka-topics-ui.kafka.192.168.88.210.xip.io:443
+      method: GET
+      contentType: text/html; charset=utf-8
+      code: 200
+      podselector:
+        app: kafka-topics-ui
+        release: kafka
+  enabled: true
+  interval: 2s
