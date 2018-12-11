@@ -41,6 +41,7 @@ type entropyConfig struct {
 
 type discoveryConfig struct {
 	Nodes   entropySelector         `yaml:"nodes"`
+	Pods    entropySelector         `yaml:"pods"`
 	Ingress ingressMonitoringConfig `yaml:"ingresses"`
 }
 

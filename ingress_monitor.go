@@ -70,7 +70,9 @@ func getIngressHost(dc discoveryConfig, ingress v1beta1.Ingress, rule v1beta1.In
 
 func monitorIngresses(testPlan ApplicationState, clientset *kubernetes.Clientset) {
 	for true {
-		ingresses := testPlan.Ingresses.Items
+		log.Printf("Checking...")
+
+		ingresses := testPlan.Monitoring.Ingresses.Items
 		for _, ingress := range ingresses {
 			for _, endpoint := range ingress.Endpoints {
 				go func(ep EndpointState) {
@@ -87,6 +89,7 @@ func monitorIngresses(testPlan ApplicationState, clientset *kubernetes.Clientset
 				}(endpoint)
 			}
 		}
-		time.Sleep(testPlan.Ingresses.Interval)
+
+		time.Sleep(testPlan.Monitoring.Interval)
 	}
 }

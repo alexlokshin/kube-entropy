@@ -15,7 +15,7 @@ func killNodes(testPlan ApplicationState, clientset *kubernetes.Clientset) {
 	var err error
 	// Attempt to get a list of all scheduleable nodes
 	for true {
-		listOptions := namedNodeSelectors(testPlan.Nodes.Items)
+		listOptions := namedNodeSelectors(testPlan.Disruption.Nodes.Items)
 		nodes, err = clientset.CoreV1().Nodes().List(listOptions)
 		if err != nil {
 			log.Printf("ERROR: Cannot get a list of nodes. Skipping for now: %v\n", err)
@@ -61,7 +61,7 @@ func killNodes(testPlan ApplicationState, clientset *kubernetes.Clientset) {
 			}
 		}
 
-		duration := time.Duration(rand.Int63n(testPlan.Nodes.Interval.Nanoseconds())) * time.Nanosecond
+		duration := time.Duration(rand.Int63n(testPlan.Disruption.Nodes.Interval.Nanoseconds())) * time.Nanosecond
 		log.Printf("For next node cordon sleeping for %s\n", duration)
 		time.Sleep(duration)
 	}

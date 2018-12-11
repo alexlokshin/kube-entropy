@@ -5,6 +5,11 @@ nodes:
     - spec.unschedulable!=true
   labels:
   interval: 5m
+pods:
+  enabled: true
+  fields:
+  labels:
+  interval: 5m
 ingresses:
   protocol: https
   port: 443

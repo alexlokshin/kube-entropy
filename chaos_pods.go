@@ -12,7 +12,7 @@ import (
 func killPods(testPlan ApplicationState, clientset *kubernetes.Clientset) {
 
 	for true {
-		ingress := testPlan.Ingresses.Items[rand.Intn(len(testPlan.Ingresses.Items))]
+		ingress := testPlan.Monitoring.Ingresses.Items[rand.Intn(len(testPlan.Monitoring.Ingresses.Items))]
 		endpoint := ingress.Endpoints[rand.Intn(len(ingress.Endpoints))]
 		listOptions := labelSelectors(endpoint.PodSelector)
 		pods, err := clientset.CoreV1().Pods("").List(listOptions)
@@ -31,8 +31,9 @@ func killPods(testPlan ApplicationState, clientset *kubernetes.Clientset) {
 			}
 		}
 
-		duration := time.Duration(rand.Int63n(testPlan.Ingresses.Interval.Nanoseconds())) * time.Nanosecond
+		duration := time.Duration(rand.Int63n(testPlan.Disruption.Pods.Interval.Nanoseconds())) * time.Nanosecond
 		log.Printf("For next pod deletion sleeping for %s\n", duration)
+		//log.Printf("Interval: %s, random %s\n", testPlan.Ingresses.Interval, duration)
 		time.Sleep(duration)
 	}
 }
