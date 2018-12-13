@@ -145,7 +145,7 @@ func main() {
 				log.Printf("Launching the ingress monitor.\n")
 				log.Printf("Monitoring ingresses every %s.\n", testPlan.Monitoring.Interval)
 
-				go monitorIngresses(testPlan, clientset)
+				go monitorIngresses(testPlan)
 			}
 
 			for true {
@@ -164,10 +164,20 @@ func main() {
 			// Ingresses -- look at the http response codes
 			// Record to a config file
 			discover(dc, clientset)
-		} else if *mode == "verify" {
+		} else if *mode == "dryrun" {
 			// TODO: verify if test plan is still valid
 			// TODO: add a resilient service for testing
 			// TODO: Add a flakey service for testing
+
+			testPlan, err := readTestPlan(*testPlanFileName)
+			if err != nil {
+				betterPanic(err.Error())
+			}
+
+			log.Printf("Verifying if ingresses match their constraints.\n")
+			validateIngresses(testPlan)
+
+			log.Printf("Done.\n")
 		} else {
 			betterPanic("Runtime mode not specified.")
 		}

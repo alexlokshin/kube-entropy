@@ -69,11 +69,6 @@ func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
 		betterPanic(err.Error())
 	}
 
-	services, err := clientset.CoreV1().Services("").List(metav1.ListOptions{})
-	if err != nil {
-		betterPanic(err.Error())
-	}
-
 	ingresses, err := clientset.Extensions().Ingresses("").List(metav1.ListOptions{})
 	if err != nil {
 		betterPanic(err.Error())
@@ -144,11 +139,6 @@ func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
 		}
 
 		appState.Monitoring.Ingresses.Items = append(appState.Monitoring.Ingresses.Items, IngressState{Name: ingress.Name, Namespace: ingress.Namespace, Endpoints: endpoints})
-	}
-
-	fmt.Printf("\nservices:\n")
-	for _, service := range services.Items {
-		fmt.Printf("%s.%s\n", service.Namespace, service.Name)
 	}
 
 	yml, err := yaml.Marshal(&appState)

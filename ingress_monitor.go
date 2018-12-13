@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"k8s.io/api/extensions/v1beta1"
-	"k8s.io/client-go/kubernetes"
 )
 
 // IsSuccessHTTPCode determines if the passed http code matches one of the masks provided
@@ -68,27 +67,36 @@ func getIngressHost(dc discoveryConfig, ingress v1beta1.Ingress, rule v1beta1.In
 	return host
 }
 
-func monitorIngresses(testPlan ApplicationState, clientset *kubernetes.Clientset) {
+func validateIngresses(testPlan ApplicationState) {
+	ingresses := testPlan.Monitoring.Ingresses.Items
+	endpoints := []EndpointState{}
+	for _, ingress := range ingresses {
+		for _, endpoint := range ingress.Endpoints {
+			endpoints = append(endpoints, endpoint)
+		}
+	}
+
+	for _, endpoint := range endpoints {
+		go func(ep EndpointState) {
+			resp, err := http.Get(ep.URL)
+			if err != nil {
+				// Timeout, DNS doesn't resolve, wrong protocol etc
+				log.Printf("Cannot do http GET against %s.\n", ep.URL)
+			} else {
+				if match, err := isMatchingResponse(ep, resp); !match {
+					log.Printf("Unexpected response when calling %s: %v.\n", ep.URL, err)
+				}
+			}
+			defer resp.Body.Close()
+		}(endpoint)
+	}
+}
+
+func monitorIngresses(testPlan ApplicationState) {
 	for true {
 		log.Printf("Checking...")
 
-		ingresses := testPlan.Monitoring.Ingresses.Items
-		for _, ingress := range ingresses {
-			for _, endpoint := range ingress.Endpoints {
-				go func(ep EndpointState) {
-					resp, err := http.Get(ep.URL)
-					if err != nil {
-						// Timeout, DNS doesn't resolve, wrong protocol etc
-						log.Printf("Cannot do http GET against %s.\n", ep.URL)
-					} else {
-						if match, err := isMatchingResponse(ep, resp); !match {
-							log.Printf("Unexpected response when calling %s: %v.\n", ep.URL, err)
-						}
-					}
-					defer resp.Body.Close()
-				}(endpoint)
-			}
-		}
+		validateIngresses(testPlan)
 
 		time.Sleep(testPlan.Monitoring.Interval)
 	}
