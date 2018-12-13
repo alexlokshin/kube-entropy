@@ -67,7 +67,8 @@ func getIngressHost(dc discoveryConfig, ingress v1beta1.Ingress, rule v1beta1.In
 	return host
 }
 
-func validateIngresses(testPlan ApplicationState) {
+func validateIngresses(testPlan ApplicationState) (result bool) {
+	result = true
 	ingresses := testPlan.Monitoring.Ingresses.Items
 	endpoints := []EndpointState{}
 	for _, ingress := range ingresses {
@@ -76,20 +77,35 @@ func validateIngresses(testPlan ApplicationState) {
 		}
 	}
 
+	channel := make(chan bool, len(endpoints))
+
 	for _, endpoint := range endpoints {
-		go func(ep EndpointState) {
+		go func(ep EndpointState, channel chan bool) {
 			resp, err := http.Get(ep.URL)
 			if err != nil {
 				// Timeout, DNS doesn't resolve, wrong protocol etc
 				log.Printf("Cannot do http GET against %s.\n", ep.URL)
+				channel <- false
 			} else {
 				if match, err := isMatchingResponse(ep, resp); !match {
 					log.Printf("Unexpected response when calling %s: %v.\n", ep.URL, err)
+					channel <- false
+				} else {
+					channel <- true
 				}
 			}
 			defer resp.Body.Close()
-		}(endpoint)
+
+		}(endpoint, channel)
 	}
+
+	for i := 0; i < len(endpoints); i++ {
+		if !<-channel {
+			result = false
+			break
+		}
+	}
+	return result
 }
 
 func monitorIngresses(testPlan ApplicationState) {

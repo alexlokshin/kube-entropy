@@ -175,9 +175,12 @@ func main() {
 			}
 
 			log.Printf("Verifying if ingresses match their constraints.\n")
-			validateIngresses(testPlan)
-
-			log.Printf("Done.\n")
+			allValid := validateIngresses(testPlan)
+			if allValid {
+				log.Printf("Done. All valid.\n")
+			} else {
+				log.Printf("Done. Some errors.\n")
+			}
 		} else {
 			betterPanic("Runtime mode not specified.")
 		}
