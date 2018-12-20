@@ -14,6 +14,7 @@ func killPods(testPlan ApplicationState, clientset *kubernetes.Clientset) {
 	for true {
 		ingress := testPlan.Monitoring.Ingresses.Items[rand.Intn(len(testPlan.Monitoring.Ingresses.Items))]
 		endpoint := ingress.Endpoints[rand.Intn(len(ingress.Endpoints))]
+		log.Printf("Deleting a pod on %s\n", endpoint.URL)
 		listOptions := labelSelectors(endpoint.PodSelector)
 		pods, err := clientset.CoreV1().Pods("").List(listOptions)
 		if err != nil {

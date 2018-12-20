@@ -1,6 +1,6 @@
 ---
 nodes:
-  enabled: true
+  enabled: false
   fields:
     - spec.unschedulable!=true
   labels:
@@ -9,18 +9,16 @@ pods:
   enabled: true
   fields:
   labels:
-  interval: 5m
+  interval: 1m
 ingresses:
   protocol: https
   port: 443
-  defaultHost: www.avsatum.com
+  defaultHost: 192.168.88.210
   selector:
     enabled: true
     interval: 2s
     fields:
-      - metadata.namespace=default
-      - metadata.namespace!=kube-system
-      - metadata.namespace!=docker
+      - metadata.namespace=test
     labels:
   successHttpCodes:
     - 2xx

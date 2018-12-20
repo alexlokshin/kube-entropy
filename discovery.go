@@ -69,7 +69,7 @@ func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
 		betterPanic(err.Error())
 	}
 
-	ingresses, err := clientset.Extensions().Ingresses("").List(metav1.ListOptions{})
+	ingresses, err := clientset.Extensions().Ingresses("").List(listSelectors(dc.Ingress.Selector))
 	if err != nil {
 		betterPanic(err.Error())
 	}
@@ -126,7 +126,7 @@ func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
 					statusCode := resp.StatusCode
 					var headers = map[string]string{}
 					for key := range resp.Header {
-						if key != "Date" && key != "Content-Length" && key != "Set-Cookie" {
+						if key != "Date" && key != "Content-Length" && key != "Set-Cookie" && key != "Etag" && key != "Last-Modified" {
 							headers[key] = resp.Header.Get(key)
 						}
 					}
