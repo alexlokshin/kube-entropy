@@ -34,16 +34,30 @@ type NodeConfiguration struct {
 	Items    []string      `yaml:"items"`
 }
 
+type PodConfiguration struct {
+	Enabled  bool          `yaml:"enabled"`
+	Interval time.Duration `yaml:"interval"`
+}
+
 type IngressConfiguration struct {
-	Enabled          bool           `yaml:"enabled"`
-	Interval         time.Duration  `yaml:"interval"`
 	SuccessHTTPCodes []string       `yaml:"successHttpCodes"`
-	Items            []IngressState `yaml:"ingresses"`
+	Items            []IngressState `yaml:"routes"`
+}
+
+type MonitoringConfiguration struct {
+	Enabled   bool                 `yaml:"enabled"`
+	Interval  time.Duration        `yaml:"interval"`
+	Ingresses IngressConfiguration `yaml:"ingresses"`
+}
+
+type DisruptionConfiguration struct {
+	Nodes NodeConfiguration `yaml:"nodes"`
+	Pods  PodConfiguration  `yaml:"pods"`
 }
 
 type ApplicationState struct {
-	Nodes     NodeConfiguration    `yaml:"nodes"`
-	Ingresses IngressConfiguration `yaml:"ingresses"`
+	Disruption DisruptionConfiguration `yaml:"disruption"`
+	Monitoring MonitoringConfiguration `yaml:"monitoring"`
 }
 
 func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
@@ -55,29 +69,34 @@ func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
 		betterPanic(err.Error())
 	}
 
-	services, err := clientset.CoreV1().Services("").List(metav1.ListOptions{})
-	if err != nil {
-		betterPanic(err.Error())
-	}
-
-	ingresses, err := clientset.Extensions().Ingresses("").List(metav1.ListOptions{})
+	ingresses, err := clientset.Extensions().Ingresses("").List(listSelectors(dc.Ingress.Selector))
 	if err != nil {
 		betterPanic(err.Error())
 	}
 
 	appState := ApplicationState{
-		Nodes: NodeConfiguration{
-			Enabled:  dc.Nodes.Enabled,
-			Interval: dc.Nodes.Interval},
-		Ingresses: IngressConfiguration{
-			Enabled:          dc.Ingress.Selector.Enabled,
-			Interval:         dc.Ingress.Selector.Interval,
-			SuccessHTTPCodes: dc.Ingress.SuccessHTTPCodes}}
+		Disruption: DisruptionConfiguration{
+			Nodes: NodeConfiguration{
+				Enabled:  dc.Nodes.Enabled,
+				Interval: dc.Nodes.Interval},
+			Pods: PodConfiguration{
+				Enabled:  dc.Pods.Enabled,
+				Interval: dc.Pods.Interval,
+			},
+		},
+		Monitoring: MonitoringConfiguration{
+			Enabled:  dc.Ingress.Selector.Enabled,
+			Interval: dc.Ingress.Selector.Interval,
+			Ingresses: IngressConfiguration{
+
+				SuccessHTTPCodes: dc.Ingress.SuccessHTTPCodes},
+		},
+	}
 
 	fmt.Printf("\nnodes:\n")
 	for _, node := range nodes.Items {
 		fmt.Printf("%s\n", node.Name)
-		appState.Nodes.Items = append(appState.Nodes.Items, node.Name)
+		appState.Disruption.Nodes.Items = append(appState.Disruption.Nodes.Items, node.Name)
 	}
 
 	// Ingress points to a service, service points to Deployments/DaemonSets
@@ -107,7 +126,7 @@ func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
 					statusCode := resp.StatusCode
 					var headers = map[string]string{}
 					for key := range resp.Header {
-						if key != "Date" && key != "Content-Length" && key != "Set-Cookie" {
+						if key != "Date" && key != "Content-Length" && key != "Set-Cookie" && key != "Etag" && key != "Last-Modified" {
 							headers[key] = resp.Header.Get(key)
 						}
 					}
@@ -119,12 +138,7 @@ func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
 			}
 		}
 
-		appState.Ingresses.Items = append(appState.Ingresses.Items, IngressState{Name: ingress.Name, Namespace: ingress.Namespace, Endpoints: endpoints})
-	}
-
-	fmt.Printf("\nservices:\n")
-	for _, service := range services.Items {
-		fmt.Printf("%s.%s\n", service.Namespace, service.Name)
+		appState.Monitoring.Ingresses.Items = append(appState.Monitoring.Ingresses.Items, IngressState{Name: ingress.Name, Namespace: ingress.Namespace, Endpoints: endpoints})
 	}
 
 	yml, err := yaml.Marshal(&appState)

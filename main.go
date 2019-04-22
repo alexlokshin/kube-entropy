@@ -123,11 +123,11 @@ func main() {
 			}
 
 			log.Printf("Entropying it up.\n")
-			if testPlan.Ingresses.Enabled {
+			if testPlan.Disruption.Pods.Enabled {
 				log.Printf("Launching the pod killer.\n")
 				go killPods(testPlan, clientset)
 			}
-			if testPlan.Nodes.Enabled {
+			if testPlan.Disruption.Nodes.Enabled {
 				log.Printf("Launching the node killer.\n")
 				go killNodes(testPlan, clientset)
 			}
@@ -141,11 +141,11 @@ func main() {
 				}
 			}*/
 
-			if testPlan.Ingresses.Enabled {
+			if testPlan.Monitoring.Enabled {
 				log.Printf("Launching the ingress monitor.\n")
-				log.Printf("Monitoring ingresses every %s.\n", testPlan.Ingresses.Interval)
+				log.Printf("Monitoring ingresses every %s.\n", testPlan.Monitoring.Interval)
 
-				go monitorIngresses(testPlan, clientset)
+				go monitorIngresses(testPlan)
 			}
 
 			for true {
@@ -164,6 +164,23 @@ func main() {
 			// Ingresses -- look at the http response codes
 			// Record to a config file
 			discover(dc, clientset)
+		} else if *mode == "dryrun" {
+			// TODO: verify if test plan is still valid
+			// TODO: add a resilient service for testing
+			// TODO: Add a flakey service for testing
+
+			testPlan, err := readTestPlan(*testPlanFileName)
+			if err != nil {
+				betterPanic(err.Error())
+			}
+
+			log.Printf("Verifying if ingresses match their constraints.\n")
+			allValid := validateIngresses(testPlan)
+			if allValid {
+				log.Printf("Done. All valid.\n")
+			} else {
+				log.Printf("Done. Some errors.\n")
+			}
 		} else {
 			betterPanic("Runtime mode not specified.")
 		}

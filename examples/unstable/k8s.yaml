@@ -1,0 +1,77 @@
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: boot-ingress
+  namespace: test
+  annotations:
+    ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: boot-ingress.test.192.168.88.210.xip.io
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: http-boot-ingress-service
+          servicePort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: http-boot-ingress-service
+  namespace: test
+spec:
+  selector:
+    app: http-boot-ingress
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: http-boot-ingress-deployment
+  namespace: test
+  labels:
+    app: http-boot-ingress
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: http-boot-ingress
+  template:
+    metadata:
+      labels:
+        app: http-boot-ingress
+    spec:
+      containers:
+      - name: sample-spring
+        image: appuio/example-spring-boot
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /live
+            port: 8080
+          initialDelaySeconds: 30
+          timeoutSeconds: 3
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /read
+            port: 8080
+          initialDelaySeconds: 30
+          timeoutSeconds: 3
+          periodSeconds: 15
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1024Mi

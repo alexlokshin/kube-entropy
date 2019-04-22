@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"k8s.io/api/extensions/v1beta1"
-	"k8s.io/client-go/kubernetes"
 )
 
 // IsSuccessHTTPCode determines if the passed http code matches one of the masks provided
@@ -68,25 +67,53 @@ func getIngressHost(dc discoveryConfig, ingress v1beta1.Ingress, rule v1beta1.In
 	return host
 }
 
-func monitorIngresses(testPlan ApplicationState, clientset *kubernetes.Clientset) {
-	for true {
-		ingresses := testPlan.Ingresses.Items
-		for _, ingress := range ingresses {
-			for _, endpoint := range ingress.Endpoints {
-				go func(ep EndpointState) {
-					resp, err := http.Get(ep.URL)
-					if err != nil {
-						// Timeout, DNS doesn't resolve, wrong protocol etc
-						log.Printf("Cannot do http GET against %s.\n", ep.URL)
-					} else {
-						if match, err := isMatchingResponse(ep, resp); !match {
-							log.Printf("Unexpected response when calling %s: %v.\n", ep.URL, err)
-						}
-					}
-					defer resp.Body.Close()
-				}(endpoint)
-			}
+func validateIngresses(testPlan ApplicationState) (result bool) {
+	result = true
+	ingresses := testPlan.Monitoring.Ingresses.Items
+	endpoints := []EndpointState{}
+	for _, ingress := range ingresses {
+		for _, endpoint := range ingress.Endpoints {
+			endpoints = append(endpoints, endpoint)
 		}
-		time.Sleep(testPlan.Ingresses.Interval)
+	}
+
+	channel := make(chan bool, len(endpoints))
+
+	for _, endpoint := range endpoints {
+		go func(ep EndpointState, channel chan bool) {
+			resp, err := http.Get(ep.URL)
+			if err != nil {
+				// Timeout, DNS doesn't resolve, wrong protocol etc
+				log.Printf("Cannot do http GET against %s.\n", ep.URL)
+				channel <- false
+			} else {
+				if match, err := isMatchingResponse(ep, resp); !match {
+					log.Printf("Unexpected response when calling %s: %v.\n", ep.URL, err)
+					channel <- false
+				} else {
+					channel <- true
+				}
+			}
+			defer resp.Body.Close()
+
+		}(endpoint, channel)
+	}
+
+	for i := 0; i < len(endpoints); i++ {
+		if !<-channel {
+			result = false
+			break
+		}
+	}
+	return result
+}
+
+func monitorIngresses(testPlan ApplicationState) {
+	for true {
+		log.Printf("Checking...")
+
+		validateIngresses(testPlan)
+
+		time.Sleep(testPlan.Monitoring.Interval)
 	}
 }
