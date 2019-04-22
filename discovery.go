@@ -118,6 +118,10 @@ func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
 
 				uri := host + path.Path
 
+				if uri[len(uri)-1] != '/' {
+					uri = uri + "/"
+				}
+
 				resp, err := http.Get(uri)
 				if err != nil {
 					// Timeout, DNS doesn't resolve, wrong protocol etc
@@ -131,14 +135,22 @@ func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
 						}
 					}
 
-					endpoints = append(endpoints, EndpointState{URL: uri, Method: "GET", Code: statusCode, Headers: headers, PodSelector: service.Spec.Selector})
+					if statusCode == 503 || statusCode == 502 {
+						fmt.Printf("Got a %d from %s.\n", statusCode, uri)
+					} else {
+						endpoints = append(endpoints, EndpointState{URL: uri, Method: "GET", Code: statusCode, Headers: headers, PodSelector: service.Spec.Selector})
+					}
 					defer resp.Body.Close()
 				}
 
 			}
 		}
 
-		appState.Monitoring.Ingresses.Items = append(appState.Monitoring.Ingresses.Items, IngressState{Name: ingress.Name, Namespace: ingress.Namespace, Endpoints: endpoints})
+		if len(endpoints) == 0 {
+			fmt.Printf("No endpoints available for %s.%s.\n", ingress.Namespace, ingress.Name)
+		} else {
+			appState.Monitoring.Ingresses.Items = append(appState.Monitoring.Ingresses.Items, IngressState{Name: ingress.Name, Namespace: ingress.Namespace, Endpoints: endpoints})
+		}
 	}
 
 	yml, err := yaml.Marshal(&appState)
