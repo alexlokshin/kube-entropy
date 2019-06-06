@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"math/rand"
 	"time"
@@ -20,15 +21,19 @@ func killPods(testPlan ApplicationState, clientset *kubernetes.Clientset) {
 		if err != nil {
 			log.Printf("ERROR: Cannot get a list of running pods. Skipping for now. %v\n", err)
 		} else {
-			randomIndex := rand.Intn(len(pods.Items))
-			for i := 0; i < len(pods.Items); i++ {
-				if i == randomIndex {
-					log.Printf("Force deleting pod %s.%s\n", pods.Items[i].Namespace, pods.Items[i].Name)
-					err := clientset.CoreV1().Pods(pods.Items[i].Namespace).Delete(pods.Items[i].Name, metav1.NewDeleteOptions(0))
-					if err != nil {
-						log.Printf("ERROR: Cannot delete a pod %s.%s: %v\n", pods.Items[i].Namespace, pods.Items[i].Name, err)
+			if pods.Items != nil && len(pods.Items) > 0 {
+				randomIndex := rand.Intn(len(pods.Items))
+				for i := 0; i < len(pods.Items); i++ {
+					if i == randomIndex {
+						log.Printf("Force deleting pod %s.%s\n", pods.Items[i].Namespace, pods.Items[i].Name)
+						err := clientset.CoreV1().Pods(pods.Items[i].Namespace).Delete(pods.Items[i].Name, metav1.NewDeleteOptions(0))
+						if err != nil {
+							log.Printf("ERROR: Cannot delete a pod %s.%s: %v\n", pods.Items[i].Namespace, pods.Items[i].Name, err)
+						}
 					}
 				}
+			} else {
+				fmt.Printf("No pods discovered for %v", endpoint.PodSelector)
 			}
 		}
 
