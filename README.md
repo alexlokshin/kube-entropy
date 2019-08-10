@@ -1,5 +1,3 @@
-![Travis CI Build Status](https://travis-ci.org/alexlokshin/kube-entropy.svg?branch=master "Travis CI Build Status")
-
 # kube-entropy
 
 A little chaos engineering application for kubernetes resilience testing.
