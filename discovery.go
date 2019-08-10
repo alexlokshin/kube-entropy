@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"io/ioutil"
@@ -117,6 +118,16 @@ func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
 				}
 
 				uri := host + path.Path
+
+				if strings.HasSuffix(uri, "?(.*)") {
+					uri = strings.TrimSuffix(uri, "?(.*)")
+				} else if strings.HasSuffix(uri, "(.*)") {
+					uri = strings.TrimSuffix(uri, "(.*)")
+				} else if strings.HasSuffix(uri, ".*") {
+					uri = strings.TrimSuffix(uri, ".*")
+				} else if strings.HasSuffix(uri, ".+") {
+					uri = strings.TrimSuffix(uri, ".+")
+				}
 
 				if uri[len(uri)-1] != '/' {
 					uri = uri + "/"
