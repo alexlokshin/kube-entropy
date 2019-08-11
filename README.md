@@ -12,7 +12,7 @@ A little chaos engineering application for kubernetes resilience testing.
 
 ## Setup
 
-Mofidy `./config/discovery.yaml` to fit your needs. There are two major sections, `nodes` and `ingresses`. s
+Modify `./config/discovery.yaml` to fit your needs. There are two major sections, `nodes` and `ingresses`. s
 
 - `nodes` section allows you to specify whether you want to periodically drain nodes, how often, and which nodes. These settings are under `enabled`, `interval` and `fileds`+`labels` (selectors). Interval can be specified as `10s` or `1h`. `enabled` is a `true` or `false`. `labels` contains a list of filters based on labels, `fields` has a list of filters based on fields. Some examples can be found here: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/ . It is a pretty powerful tool.
 
