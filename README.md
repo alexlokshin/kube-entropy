@@ -75,3 +75,4 @@ successHttpCodes:
 
 - DNS disruption
 - Network connectivity disruption
+- Support for Istio/Knative
