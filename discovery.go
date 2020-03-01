@@ -70,7 +70,7 @@ func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
 		betterPanic(err.Error())
 	}
 
-	ingresses, err := clientset.Extensions().Ingresses("").List(listSelectors(dc.Ingress.Selector))
+	ingresses, err := clientset.ExtensionsV1beta1().Ingresses("").List(listSelectors(dc.Ingress.Selector))
 	if err != nil {
 		betterPanic(err.Error())
 	}
