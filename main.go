@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"fmt"
@@ -66,6 +67,7 @@ func readDiscoveryConfig(configFileName string) (dc discoveryConfig, err error) 
 }
 
 func main() {
+	ctx := context.Background()
 	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 
 	testPlanFileName := flag.String("config", "./testplan.yaml", "Test plan file")
@@ -109,7 +111,7 @@ func main() {
 	if err != nil {
 		betterPanic(err.Error())
 	} else {
-		nodes, err := clientset.CoreV1().Nodes().List(metav1.ListOptions{})
+		nodes, err := clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 		if err != nil {
 			betterPanic("ERROR: Unable to connect to the k8s cluster. " + err.Error())
 		} else {
@@ -125,11 +127,11 @@ func main() {
 			log.Printf("Entropying it up.\n")
 			if testPlan.Disruption.Pods.Enabled {
 				log.Printf("Launching the pod killer.\n")
-				go killPods(testPlan, clientset)
+				go killPods(ctx, testPlan, clientset)
 			}
 			if testPlan.Disruption.Nodes.Enabled {
 				log.Printf("Launching the node killer.\n")
-				go killNodes(testPlan, clientset)
+				go killNodes(ctx, testPlan, clientset)
 			}
 
 			/*if inCluster {
@@ -163,7 +165,7 @@ func main() {
 			// Services -- discover protocol
 			// Ingresses -- look at the http response codes
 			// Record to a config file
-			discover(dc, clientset)
+			discover(ctx, dc, clientset)
 		} else if *mode == "dryrun" {
 			// TODO: verify if test plan is still valid
 			// TODO: add a resilient service for testing

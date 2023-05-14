@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -61,16 +62,16 @@ type ApplicationState struct {
 	Monitoring MonitoringConfiguration `yaml:"monitoring"`
 }
 
-func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
+func discover(ctx context.Context, dc discoveryConfig, clientset *kubernetes.Clientset) {
 
 	fmt.Printf("Creating a test plan.\n")
 	listOptions := listSelectors(dc.Nodes)
-	nodes, err := clientset.CoreV1().Nodes().List(listOptions)
+	nodes, err := clientset.CoreV1().Nodes().List(ctx, listOptions)
 	if err != nil {
 		betterPanic(err.Error())
 	}
 
-	ingresses, err := clientset.ExtensionsV1beta1().Ingresses("").List(listSelectors(dc.Ingress.Selector))
+	ingresses, err := clientset.ExtensionsV1beta1().Ingresses("").List(ctx, listSelectors(dc.Ingress.Selector))
 	if err != nil {
 		betterPanic(err.Error())
 	}
@@ -111,7 +112,7 @@ func discover(dc discoveryConfig, clientset *kubernetes.Clientset) {
 			for _, path := range rule.HTTP.Paths {
 
 				serviceName := path.Backend.ServiceName
-				service, err := clientset.CoreV1().Services(ingress.Namespace).Get(serviceName, metav1.GetOptions{})
+				service, err := clientset.CoreV1().Services(ingress.Namespace).Get(ctx, serviceName, metav1.GetOptions{})
 				if err != nil {
 					log.Printf("Cannot get a service %s.\n", serviceName)
 					continue

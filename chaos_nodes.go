@@ -1,22 +1,24 @@
 package main
 
 import (
+	"context"
 	"log"
 	"math/rand"
 	"time"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
 
-func killNodes(testPlan ApplicationState, clientset *kubernetes.Clientset) {
+func killNodes(ctx context.Context, testPlan ApplicationState, clientset *kubernetes.Clientset) {
 
 	nodes := &v1.NodeList{}
 	var err error
 	// Attempt to get a list of all scheduleable nodes
 	for true {
 		listOptions := namedNodeSelectors(testPlan.Disruption.Nodes.Items)
-		nodes, err = clientset.CoreV1().Nodes().List(listOptions)
+		nodes, err = clientset.CoreV1().Nodes().List(ctx, listOptions)
 		if err != nil {
 			log.Printf("ERROR: Cannot get a list of nodes. Skipping for now: %v\n", err)
 			time.Sleep(time.Duration(1 * time.Minute))
@@ -34,7 +36,7 @@ func killNodes(testPlan ApplicationState, clientset *kubernetes.Clientset) {
 			node := nodes.Items[i]
 			if node.Spec.Unschedulable == true {
 				node.Spec.Unschedulable = false
-				_, err = clientset.CoreV1().Nodes().Update(&node)
+				_, err = clientset.CoreV1().Nodes().Update(ctx, &node, metav1.UpdateOptions{})
 				if err != nil {
 					log.Printf("ERROR: Cannot uncordon the node: %v\n", err)
 				}
@@ -52,7 +54,7 @@ func killNodes(testPlan ApplicationState, clientset *kubernetes.Clientset) {
 				if i == randomIndex {
 					log.Printf("Cordoning off %s\n", node.Name)
 					node.Spec.Unschedulable = true
-					_, err = clientset.CoreV1().Nodes().Update(&node)
+					_, err = clientset.CoreV1().Nodes().Update(ctx, &node, metav1.UpdateOptions{})
 					if err != nil {
 						log.Printf("ERROR: Cannot cordon the node: %v\n", err)
 					}
